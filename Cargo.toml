@@ -1,0 +1,32 @@
+[package]
+name = "plonk_protoype"
+version = "0.1.0"
+authors = []
+edition = "2018"
+readme = "README.md"
+repository = "https://github.com/Manta-Network/Plonk-Prototype"
+keywords = ["cryptography", "circuits", "zk-snarks", "zero-knowledge", "crypto"]
+categories =["algorithms", "cryptography", "science"]
+description = "An implementation of various circuits within Manta Network"
+license = "MPL-2.0"
+exclude = [
+    ".gitignore",
+    "Cargo.lock",
+    ".github/"
+]
+
+[dependencies]
+dusk-plonk = {version = "0.8.2", default-features = false, features = ["alloc"]}
+dusk-bls12_381 = "0.8"
+dusk-jubjub = "0.10"
+dusk-schnorr = "0.7.1"
+dusk-poseidon = { version = "0.22", features = ["canon"] }
+dusk-bytes = "0.1"
+
+[dev-dependencies]
+rand = "0.8"
+
+[features]
+std = [
+    "dusk-plonk/std"
+]
