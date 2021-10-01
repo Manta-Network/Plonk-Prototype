@@ -40,6 +40,21 @@ pub fn commitment_gadget(
     composer.point_addition_gate(p1, p2)
 }
 
+// Function to calculate in-circuit variable length pedersen commitment
+pub fn variable_length_pedersen_commitment_gadget(
+    composer: &mut StandardComposer,
+    value_variables: Vec<Variable>,
+    blinder_variables: Vec<Variable>,
+) -> Point {
+    // Conduct fixed length pedersen commitment over individual m/r pairs, and accumulate in output_point
+    let output_point = commitment_gadget(composer, value_variables[0], blinder_variables[0]);
+    for i in 1..value_variables.len() {
+        let tmp_point = commitment_gadget(composer, value_variables[i], blinder_variables[i]);
+        output_point = composer.point_addition_gate(output_point, tmp_point);
+    }
+    output_point
+}
+
 /// Returns 1 if a = b and zero otherwise.
 ///
 /// # NOTE
