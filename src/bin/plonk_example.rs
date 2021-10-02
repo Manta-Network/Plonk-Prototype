@@ -1,5 +1,5 @@
 use dusk_plonk::prelude::*;
-use rand_core::OsRng;
+use rand_core::OsRng; 
 
 // Implement a circuit that checks:
 // 1) a + b = c where C is a PI

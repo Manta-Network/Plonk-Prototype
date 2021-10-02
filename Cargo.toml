@@ -23,9 +23,9 @@ dusk-schnorr = "0.7.1"
 dusk-poseidon = { version = "0.22", features = ["canon"] }
 dusk-bytes = "0.1"
 rand_core = "0.6.0"
-
-[dev-dependencies]
 rand = "0.8"
+[dev-dependencies]
+
 
 [features]
 std = [
