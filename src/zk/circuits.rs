@@ -16,6 +16,7 @@
 
 //! Circuits implementations
 
+/*
 use crate::zk::gadgets::*;
 use dusk_jubjub::{GENERATOR_EXTENDED, GENERATOR_NUMS_EXTENDED};
 use dusk_plonk::constraint_system::ecc::Point;
@@ -31,6 +32,7 @@ pub struct MockCircuit {
     public_key: JubJubAffine,
 }
 
+// Compilation error
 impl MockCircuit {
     /// Function to create new note
     pub fn new(
@@ -71,3 +73,4 @@ impl MockCircuit {
         composer.constrain_to_constant(hash, BlsScalar::zero(), Some(-public_hash));
     }
 }
+*/

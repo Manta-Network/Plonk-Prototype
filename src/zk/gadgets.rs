@@ -47,9 +47,10 @@ pub fn variable_length_pedersen_commitment_gadget(
     blinder_variables: Vec<Variable>,
 ) -> Point {
     // Conduct fixed length pedersen commitment over individual m/r pairs, and accumulate in output_point
-    let output_point = commitment_gadget(composer, value_variables[0], blinder_variables[0]);
+    let mut output_point = commitment_gadget(composer, value_variables[0], blinder_variables[0]);
     for i in 1..value_variables.len() {
         let tmp_point = commitment_gadget(composer, value_variables[i], blinder_variables[i]);
+        // TODO: Not sure whether we should accumulate with point_addition_gate.
         output_point = composer.point_addition_gate(output_point, tmp_point);
     }
     output_point
