@@ -3,7 +3,7 @@ use std::ops::Add;
 
 use dusk_bytes::{ParseHexStr, Serializable};
 use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
-use rand::{RngCore, SeedableRng, prelude::StdRng};
+use rand::{Rng, RngCore, SeedableRng, prelude::StdRng};
 /// For circuit, we need to constrain bits input to be in [0,1]
 fn perdersen_native(gen: JubJubExtended, bits: &[bool]) -> JubJubExtended {
     let mut curr = gen;
@@ -17,7 +17,7 @@ fn perdersen_native(gen: JubJubExtended, bits: &[bool]) -> JubJubExtended {
 
 fn main(){
     let mut rng = StdRng::seed_from_u64(0x12345678);
-    let gen = dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(rng.next_u32() as u64);
-    let result = perdersen_native(gen, &[false, false, false, true, false, true, false, true]); 
+    let gen = dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(rng.next_u64());
+    let result = perdersen_native(gen, &(0..256).map(|_|rng.gen_bool(0.5)).collect::<Vec<_>>()); 
     println!("Native Result: {:?}", result);
 }
