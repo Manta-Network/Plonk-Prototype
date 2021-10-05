@@ -52,6 +52,10 @@ impl Circuit for  BHOneChunk {
         
         
         // // TODO: looks not efficient, probably use 1) fixed base  2)allocate constant for negative one
+        // Q1: go over the code for sanity check
+        // Q2: how to allocate constant scalar
+        // Q3: how to allocate constant affine point
+
         let encoded_ne = {
             let temp = composer.add_input(JubJubScalar::one().neg().into());
             composer.variable_base_scalar_mul(temp, encoded)
