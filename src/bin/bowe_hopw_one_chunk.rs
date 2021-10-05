@@ -51,14 +51,13 @@ impl Circuit for  BHOneChunk {
         }
         
         
-        // TODO: looks not efficient, probably use 1) fixed base  2)allocate constant for negative one
+        // // TODO: looks not efficient, probably use 1) fixed base  2)allocate constant for negative one
         let encoded_ne = {
-            let temp = composer.add_input(BlsScalar::one().neg());
+            let temp = composer.add_input(JubJubScalar::one().neg().into());
             composer.variable_base_scalar_mul(temp, encoded)
         };
 
         encoded = composer.conditional_point_select(encoded_ne, encoded, bits[2]);
-
         composer.assert_equal_public_point(encoded, self.target_hash);
         Ok(())
     }
