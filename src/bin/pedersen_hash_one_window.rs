@@ -1,5 +1,4 @@
-
-use dusk_bytes::{ParseHexStr, Serializable};
+use std::ops::Add;
 use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
 use dusk_plonk::prelude::*;
 use rand::{Rng, RngCore, SeedableRng, prelude::StdRng};
