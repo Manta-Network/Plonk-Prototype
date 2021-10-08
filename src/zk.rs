@@ -20,3 +20,4 @@ pub mod allocated_scalar;
 pub mod circuits;
 pub mod gadgets;
 pub use allocated_scalar::AllocatedScalar;
+pub mod pedersen;
