@@ -1,9 +1,10 @@
+#![allow(unused)]
 //! This example creates a pedersen hash with only one window, as an example
 use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
 use dusk_plonk::prelude::*;
 use rand::{Rng, RngCore, SeedableRng, prelude::StdRng};
 /// For circuit, we need to constrain bits input to be in [0,1]
-fn bowe_hopwood_native(gen: JubJubExtended, bits: [bool;3]) -> JubJubExtended {
+fn bowe_hopwood_native(gen: JubJubExtended, bits: &[bool]) -> JubJubExtended {
     assert_eq!(bits.len(), 3);
     // generate gen, 2*gen, 4*gen
     let gen2 = gen + gen;
@@ -22,7 +23,7 @@ fn bowe_hopwood_native(gen: JubJubExtended, bits: [bool;3]) -> JubJubExtended {
 
 pub struct BHOneChunk {
     gen: JubJubAffine,
-    bits: [bool; 3],
+    bits: Vec<bool>,
     target_hash: JubJubAffine
 }
 
@@ -49,12 +50,6 @@ impl Circuit for  BHOneChunk {
             let temp = composer.conditional_point_select(gen2, point_zero, bits[1]);
             encoded = composer.point_addition_gate(encoded, temp);
         }
-        
-        
-        // // TODO: looks not efficient, probably use 1) fixed base  2)allocate constant for negative one
-        // Q1: go over the code for sanity check
-        // Q2: how to allocate constant scalar
-        // Q3: how to allocate constant affine point
 
         let encoded_ne = {
             let temp = composer.add_input(JubJubScalar::one().neg().into());
@@ -75,9 +70,9 @@ impl Circuit for  BHOneChunk {
 fn main(){
     let mut rng = StdRng::seed_from_u64(0x12345678);
     let gen = dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(rng.next_u64());
-    let mut bits = [false;3];
+    let mut bits = vec![false;3];
     bits.iter_mut().for_each(|b|*b = rng.gen());
-    let native_result = bowe_hopwood_native(gen, bits);
+    let native_result = bowe_hopwood_native(gen, &bits);
 
     let mut circuit = BHOneChunk{
         bits: bits.clone(),
