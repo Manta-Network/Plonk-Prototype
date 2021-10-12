@@ -1,9 +1,9 @@
 //! This example creates a pedersen hash with only one window, as an example
 use dusk_jubjub::{JubJubAffine, JubJubExtended, JubJubScalar};
 use dusk_plonk::prelude::*;
-use rand::{Rng, RngCore, SeedableRng, prelude::StdRng};
+use rand::{prelude::StdRng, Rng, RngCore, SeedableRng};
 /// For circuit, we need to constrain bits input to be in [0,1]
-fn bowe_hopwood_native(gen: JubJubExtended, bits: [bool;3]) -> JubJubExtended {
+fn bowe_hopwood_native(gen: JubJubExtended, bits: [bool; 3]) -> JubJubExtended {
     assert_eq!(bits.len(), 3);
     // generate gen, 2*gen, 4*gen
     let gen2 = gen + gen;
@@ -23,20 +23,28 @@ fn bowe_hopwood_native(gen: JubJubExtended, bits: [bool;3]) -> JubJubExtended {
 pub struct BHOneChunk {
     gen: JubJubAffine,
     bits: [bool; 3],
-    target_hash: JubJubAffine
+    target_hash: JubJubAffine,
 }
 
-impl Circuit for  BHOneChunk {
+impl Circuit for BHOneChunk {
     const CIRCUIT_ID: [u8; 32] = [0xff; 32];
 
     fn gadget(&mut self, composer: &mut StandardComposer) -> Result<(), Error> {
         // generate gen, 2*gen, 4*gen
         let gen = composer.add_affine(self.gen.into());
         let gen2 = composer.point_addition_gate(gen, gen);
-        let bits = self.bits.iter().map(|bit|{
-            let bit = composer.add_input(if *bit {BlsScalar::one()} else {BlsScalar::zero()});
-            composer.boolean_gate(bit)
-        }).collect::<Vec<_>>();
+        let bits = self
+            .bits
+            .iter()
+            .map(|bit| {
+                let bit = composer.add_input(if *bit {
+                    BlsScalar::one()
+                } else {
+                    BlsScalar::zero()
+                });
+                composer.boolean_gate(bit)
+            })
+            .collect::<Vec<_>>();
         let mut encoded = gen;
 
         let point_zero = composer.add_affine(JubJubAffine::identity());
@@ -49,8 +57,7 @@ impl Circuit for  BHOneChunk {
             let temp = composer.conditional_point_select(gen2, point_zero, bits[1]);
             encoded = composer.point_addition_gate(encoded, temp);
         }
-        
-        
+
         // // TODO: looks not efficient, probably use 1) fixed base  2)allocate constant for negative one
         // Q1: go over the code for sanity check
         // Q2: how to allocate constant scalar
@@ -72,30 +79,26 @@ impl Circuit for  BHOneChunk {
     }
 }
 
-fn main(){
+fn main() {
     let mut rng = StdRng::seed_from_u64(0x12345678);
     let gen = dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(rng.next_u64());
-    let mut bits = [false;3];
-    bits.iter_mut().for_each(|b|*b = rng.gen());
+    let mut bits = [false; 3];
+    bits.iter_mut().for_each(|b| *b = rng.gen());
     let native_result = bowe_hopwood_native(gen, bits);
 
-    let mut circuit = BHOneChunk{
+    let mut circuit = BHOneChunk {
         bits: bits.clone(),
         gen: gen.into(),
-        target_hash: native_result.into()
+        target_hash: native_result.into(),
     };
 
     let pp = PublicParameters::setup(1 << 12, &mut rng).unwrap();
-    
+
     let (pk, vd) = circuit.compile(&pp).unwrap();
 
     let proof = circuit.gen_proof(&pp, &pk, b"Test").unwrap();
 
-    let public_inputs: Vec<PublicInputValue> = vec![
-        JubJubAffine::from(circuit.target_hash)
-        .into(),
-    ];
-
+    let public_inputs: Vec<PublicInputValue> = vec![JubJubAffine::from(circuit.target_hash).into()];
 
     circuit::verify_proof(
         &pp,
@@ -104,8 +107,8 @@ fn main(){
         &public_inputs,
         &vd.pi_pos(),
         b"Test",
-    ).unwrap();
+    )
+    .unwrap();
 
     println!("{:?}", native_result);
-
 }
