@@ -29,26 +29,29 @@ use dusk_poseidon::*;
 const BASE_SIZE: usize = 8;
 
 #[derive(Clone, Copy)]
-///
+/// Precomputed powers of P..8P 
 pub struct PrecomputedBases {
     powers_of_p: [JubJubAffine; BASE_SIZE],
 }
-/// Size256(n) ladder
+/// Pedersen Ladder contains precomputed powers 
+/// of a group generator G, for different windows
+/// of bits
 pub struct PedersenLadder {
     rows: Vec<PrecomputedBases>,
 }
-
 /// Quad langth 4. Incoming bits = 256.
 /// numbers of windows needed 256/4 + 1 = 65.
 /// With the last window deciding if the outcome is odd or even
 /// many ladders
 ///
+/// Hash ladder is a struct which contains two Pedersen ladders
 pub struct HashLadder {
     first_table: PedersenLadder,
     second_table: PedersenLadder,
 }
 
 impl HashLadder {
+    /// Construct Hash Ladder
     pub fn new(
         p: JubJubExtended,
         p_prime: JubJubExtended,
@@ -63,6 +66,7 @@ impl HashLadder {
 }
 
 impl PedersenLadder {
+    /// Construct Pedersen Ladder
     fn new(p: JubJubExtended, num_bases: usize) -> Self {
         let bases = (0..num_bases)
             .into_iter()
@@ -77,6 +81,7 @@ impl PedersenLadder {
 }
 
 impl PrecomputedBases {
+    /// Construct set of bases
     fn new(base_point: JubJubExtended) -> Self {
         let bases_vec = (0..BASE_SIZE)
             .into_iter()
@@ -116,7 +121,8 @@ pub fn compute_pedersen_hash(scalar: [i8; 256]) -> JubJubAffine {
     JubJubAffine::from(accumulator)
 }
 
-// Conditionally select the outputs for each basepoint.
+// Conditionally select the outputs for each basepoint
+// from a selection of {-8, 8} multiples of P
 fn multiplexer(ladder: PrecomputedBases, bits: &[i8]) -> JubJubAffine {
     let a = 1 + bits[0];
     let b = 2 * bits[1];
@@ -132,34 +138,10 @@ fn multiplexer(ladder: PrecomputedBases, bits: &[i8]) -> JubJubAffine {
     }
 }
 
-// // Get the y_output of pedersen_hash
-// fn get_y_output(ladder: PrecomputedBases, bits: &[bool; 4]) -> BlsScalar {
-//     let a_0 = ladder.x_values[0];
-//     let a_1 = ladder.x_values[1];
-//     let a_2 = ladder.x_values[2];
-//     let a_3 = ladder.x_values[3];
-//     let a_4 = ladder.x_values[4];
-//     let a_5 = ladder.x_values[5];
-//     let a_6 = ladder.x_values[6];
-//     let a_7 = ladder.x_values[7];
 
-//     let z = 1 as u32;
 
-//     let s_n = bits[0] as u8 + bits[1] as u8;
-//     let lhs = (((a_7 - a_6 - a_5 + a_4 - a_3 + a_2 + a_1 - a_0)
-//         * BlsScalar::from(s_n as u64).reduce())
-//         + ((a_6 - a_4 - a_2 + a_0) * BlsScalar::from(bits[1] as u64).reduce())
-//         + ((a_5 - a_4 - a_1 + a_0) * BlsScalar::from(bits[0] as u64).reduce())
-//         + (a_4 - a_0))
-//         * BlsScalar::one().reduce();
-
-//     let rhs = ((a_3 - a_2 - a_1 + a_0) * BlsScalar::from(s_n as u64).reduce())
-//         + ((a_2 - a_0) * BlsScalar::from(bits[1] as u64).reduce())
-//         + ((a_1 - a_0) * BlsScalar::from(s_n as u64).reduce())
-//         + a_0;
-// }
-
-//
+/// This function is from the orginal method of encoding functions
+/// in pedersen hash 
 pub fn encode(composer: &mut StandardComposer, bits: [Variable; 4]) -> Variable {
     // bits(m_j) = [b_0, b_1, b_3, b_4]
     // ((2b_3) - 1) * (1 + b_0 + 2b_1 + 4b_2)
@@ -185,13 +167,21 @@ pub fn encode(composer: &mut StandardComposer, bits: [Variable; 4]) -> Variable 
     )
 }
 
-// pub fn pedersen_hash(composer: &mut StandardComposer, encoded_values: &[Variable]) -> (Point, Point) {
 
-//     for i in 0..50 {
-//         let base = composer.add_witness_to_circuit_description((BlsScalar::from(32));
-//         let two_five_j = composer.big_mul(BlsScalar::::from(2), , b, q_4_d, q_c, pi);
-//         let mut point_1 = composer.big_add_gate(a, b, c, d, q_l, q_r, q_o, q_4, q_c, pi);
-//     }
+/// zk pedersen
+/// TODO: Hash from bytes or convert scalar internally
+pub fn circuit_pedersen(composer: &mut StandardComposer, scalar: [bool; 256]) -> Point {
 
-// }
+    let second_bases = scalar[200..].len() / 4;
 
+    let full_ladder = HashLadder::new(
+        GENERATOR_EXTENDED,
+        GENERATOR_NUMS_EXTENDED,
+        50,
+        second_bases,
+    );
+
+    const CHUNK_SIZE: usize = 4; 
+
+
+}
