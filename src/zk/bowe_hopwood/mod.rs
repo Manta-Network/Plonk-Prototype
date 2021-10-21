@@ -1,4 +1,6 @@
 //! This example creates a pedersen hash with only one window, as an example
+use std::ops::Neg;
+
 use dusk_jubjub::{JubJubAffine, JubJubExtended};
 use dusk_plonk::prelude::*;
 use rand::{prelude::StdRng, Rng, RngCore, SeedableRng};
@@ -58,20 +60,34 @@ fn bowe_hopwood_native(
     ps.fold(JubJubExtended::identity(), |prev, curr| prev + curr)
 }
 
-fn chunk_3bit_gadget(composer: &mut StandardComposer, gen: Point, bits: &[Variable]) -> Point {
-    // generate gen, 2*gen, 4*gen
+fn chunk_3bit_gadget(
+    composer: &mut StandardComposer,
+    gen: Point,
+    gen_inv: Point,
+    bits: &[Variable],
+) -> Point {
+    // generate gen, 2*gen
     let gen2 = composer.point_addition_gate(gen, gen);
+    let gen_inv2 = composer.point_addition_gate(gen_inv, gen_inv);
     let mut encoded = gen;
+    let mut encoded_inv = gen_inv;
 
-    let point_zero = composer.add_affine(JubJubAffine::identity());
+    let point_zero = composer.add_affine_to_circuit_description(JubJubAffine::identity());
 
     {
         let temp = composer.conditional_point_select(gen, point_zero, bits[0]);
         encoded = composer.point_addition_gate(encoded, temp);
+
+        let temp_inv = composer.conditional_point_select(gen_inv, point_zero, bits[0]);
+        encoded_inv = composer.point_addition_gate(encoded_inv, temp_inv);
     }
+
     {
         let temp = composer.conditional_point_select(gen2, point_zero, bits[1]);
         encoded = composer.point_addition_gate(encoded, temp);
+
+        let temp_inv = composer.conditional_point_select(gen_inv2, point_zero, bits[1]);
+        encoded_inv = composer.point_addition_gate(encoded_inv, temp_inv);
     }
 
     // gen = k * generator
@@ -81,22 +97,14 @@ fn chunk_3bit_gadget(composer: &mut StandardComposer, gen: Point, bits: &[Variab
     // if bit[2] is true -> gen^{-bit[0] - bit[1]}
     // if bit[2] if false -> gen^{bit[0] + bit[1]}
     // result * generator
-    let encoded_ne = {
-        let temp = composer.add_input(JubJubScalar::one().neg().into());
-        let c0 = composer.circuit_size();
-        // TODO: var base scalar mul is super expensive
-        let result = composer.variable_base_scalar_mul(temp, encoded);
-        let c1 = composer.circuit_size();
-        println!("variable_base_scalar_mul constraints: {:?}", c1 - c0);
-        result
-    };
 
-    composer.conditional_point_select(encoded_ne, encoded, bits[2])
+    composer.conditional_point_select(encoded_inv, encoded, bits[2])
 }
 
 fn bowe_hopwood_one_window_gadget(
     composer: &mut StandardComposer,
     mut gen: Point,
+    mut gen_inv: Point,
     bits: &[Variable],
     num_chunks_in_window: usize,
 ) -> Point {
@@ -108,13 +116,18 @@ fn bowe_hopwood_one_window_gadget(
     );
     let mut curr_result = Point::identity(composer);
     (0..num_chunks_in_window).for_each(|i| {
-        let local_point =
-            chunk_3bit_gadget(composer, gen, &bits[i * CHUNK_SIZE..i * CHUNK_SIZE + 3]);
+        let local_point = chunk_3bit_gadget(
+            composer,
+            gen,
+            gen_inv,
+            &bits[i * CHUNK_SIZE..i * CHUNK_SIZE + 3],
+        );
 
         curr_result = composer.point_addition_gate(curr_result, local_point);
 
         for _ in 0..(CHUNK_SIZE + 1) {
             gen = composer.point_addition_gate(gen, gen);
+            gen_inv = composer.point_addition_gate(gen_inv, gen_inv);
         }
     });
 
@@ -125,6 +138,7 @@ fn bowe_hopwood_one_window_gadget(
 fn bowe_hopwood_gadget(
     composer: &mut StandardComposer,
     gen: &[Point],
+    gen_inv: &[Point],
     bits: &[Variable],
     num_chunks_in_window: usize,
 ) -> Point {
@@ -132,8 +146,10 @@ fn bowe_hopwood_gadget(
     assert!(bits.len() % (CHUNK_SIZE * num_chunks_in_window) == 0);
     let ps = bits
         .chunks(CHUNK_SIZE * num_chunks_in_window)
-        .zip(gen.iter())
-        .map(|(chunk, g)| bowe_hopwood_one_window_gadget(composer, *g, chunk, num_chunks_in_window))
+        .zip(gen.iter().zip(gen_inv.iter()))
+        .map(|(chunk, (g, g_inv))| {
+            bowe_hopwood_one_window_gadget(composer, *g, *g_inv, chunk, num_chunks_in_window)
+        })
         .collect::<Vec<_>>();
 
     let mut curr = Point::identity(composer);
@@ -159,7 +175,13 @@ impl Circuit for BoweHopwood {
         let gen_var = self
             .gen
             .iter()
-            .map(|x| composer.add_affine(*x))
+            .map(|x| composer.add_affine_to_circuit_description(*x))
+            .collect::<Vec<_>>();
+
+        let gen_inv_var = self
+            .gen
+            .iter()
+            .map(|x| composer.add_affine_to_circuit_description(x.neg()))
             .collect::<Vec<_>>();
 
         let bits_var = self
@@ -175,13 +197,19 @@ impl Circuit for BoweHopwood {
             })
             .collect::<Vec<_>>();
 
-        let result_point = bowe_hopwood_gadget(composer, &gen_var, &bits_var, NUM_CHUNKS_IN_WINDOW);
+        let result_point = bowe_hopwood_gadget(
+            composer,
+            &gen_var,
+            &gen_inv_var,
+            &bits_var,
+            NUM_CHUNKS_IN_WINDOW,
+        );
         composer.assert_equal_public_point(result_point, self.target_hash);
         Ok(())
     }
 
     fn padded_circuit_size(&self) -> usize {
-        1 << 19 // TODO
+        1 << 14 // TODO
     }
 }
 
@@ -207,28 +235,27 @@ fn test() {
 
     let mut composer = StandardComposer::new();
 
-    circuit.gadget(&mut composer);
+    // circuit.gadget(&mut composer);
 
-    println!("total number of constraints: {:?}", composer.circuit_size());
+    // println!("total number of constraints: {:?}", composer.circuit_size());
 
-    // let pp = PublicParameters::setup(1 << 19, &mut rng).unwrap();
+    let pp = PublicParameters::setup(1 << 14, &mut rng).unwrap();
 
-    // let (pk, vd) = circuit.compile(&pp).unwrap();
+    let (pk, vd) = circuit.compile(&pp).unwrap();
 
-    // let proof = circuit.gen_proof(&pp, &pk, b"Test").unwrap();
+    let proof = circuit.gen_proof(&pp, &pk, b"Test").unwrap();
 
-    // let public_inputs: Vec<PublicInputValue> =
-    // vec![JubJubAffine::from(circuit.target_hash).into()];
+    let public_inputs: Vec<PublicInputValue> = vec![JubJubAffine::from(circuit.target_hash).into()];
 
-    // circuit::verify_proof(
-    //     &pp,
-    //     &vd.key(),
-    //     &proof,
-    //     &public_inputs,
-    //     &vd.pi_pos(),
-    //     b"Test",
-    // )
-    // .unwrap();
+    circuit::verify_proof(
+        &pp,
+        &vd.key(),
+        &proof,
+        &public_inputs,
+        &vd.pi_pos(),
+        b"Test",
+    )
+    .unwrap();
 
-    // println!("{:?}", native_result);
+    println!("{:?}", native_result);
 }
