@@ -21,3 +21,4 @@ pub mod circuits;
 pub mod gadgets;
 pub mod bowe_hopwood;
 pub use allocated_scalar::AllocatedScalar;
+pub mod pedersen;

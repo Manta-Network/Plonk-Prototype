@@ -1,5 +1,5 @@
 use dusk_plonk::prelude::*;
-use rand_core::OsRng; 
+use rand_core::OsRng;
 
 // Implement a circuit that checks:
 // 1) a + b = c where C is a PI
@@ -19,10 +19,7 @@ pub struct TestCircuit {
 
 impl Circuit for TestCircuit {
     const CIRCUIT_ID: [u8; 32] = [0xff; 32];
-    fn gadget(
-        &mut self,
-        composer: &mut StandardComposer,
-    ) -> Result<(), Error> {
+    fn gadget(&mut self, composer: &mut StandardComposer) -> Result<(), Error> {
         let a = composer.add_input(self.a);
         let b = composer.add_input(self.b);
         // Make first constraint a + b = c
@@ -54,8 +51,7 @@ impl Circuit for TestCircuit {
         );
 
         let e = composer.add_input(self.e.into());
-        let scalar_mul_result = composer
-            .fixed_base_scalar_mul(e, dusk_jubjub::GENERATOR_EXTENDED);
+        let scalar_mul_result = composer.fixed_base_scalar_mul(e, dusk_jubjub::GENERATOR_EXTENDED);
         // Apply the constrain
         composer.assert_equal_public_point(scalar_mul_result, self.f);
         Ok(())
@@ -81,9 +77,7 @@ fn main() {
             c: BlsScalar::from(25u64),
             d: BlsScalar::from(100u64),
             e: JubJubScalar::from(2u64),
-            f: JubJubAffine::from(
-                dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(2u64),
-            ),
+            f: JubJubAffine::from(dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(2u64)),
         };
         circuit.gen_proof(&pp, &pk, b"Test").unwrap()
     };
@@ -91,10 +85,7 @@ fn main() {
     let public_inputs: Vec<PublicInputValue> = vec![
         BlsScalar::from(25u64).into(),
         BlsScalar::from(100u64).into(),
-        JubJubAffine::from(
-            dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(2u64),
-        )
-        .into(),
+        JubJubAffine::from(dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(2u64)).into(),
     ];
     circuit::verify_proof(
         &pp,
@@ -103,5 +94,6 @@ fn main() {
         &public_inputs,
         &vd.pi_pos(),
         b"Test",
-    ).unwrap();
+    )
+    .unwrap();
 }
