@@ -19,19 +19,19 @@
 use std::ops::Neg;
 
 use crate::zk::gadgets::*;
-use dusk_bls12_381::multi_miller_loop;
 use dusk_jubjub::{
     JubJubAffine, JubJubExtended, Scalar, GENERATOR, GENERATOR_EXTENDED, GENERATOR_NUMS_EXTENDED,
 };
 use dusk_plonk::prelude::*;
-use dusk_poseidon::*;
 
+
+// we use 3-bit lookup tables for the pedersen hash
 const BASE_SIZE: usize = 8;
 
 #[derive(Clone, Copy)]
-/// Precomputed powers of P..8P 
+/// Precomputed powers of P..BASE_SIZE*P 
 pub struct PrecomputedBases {
-    powers_of_p: [JubJubAffine; BASE_SIZE],
+    powers_of_p: [JubJubExtended; BASE_SIZE],
 }
 /// Pedersen Ladder contains precomputed powers 
 /// of a group generator G, for different windows
@@ -85,10 +85,10 @@ impl PrecomputedBases {
     fn new(base_point: JubJubExtended) -> Self {
         let bases_vec = (0..BASE_SIZE)
             .into_iter()
-            .map(|i| JubJubAffine::from(base_point * Scalar::from((i + 1) as u64)))
-            .collect::<Vec<JubJubAffine>>();
+            .map(|i| base_point * Scalar::from((i + 1) as u64))
+            .collect::<Vec<_>>();
 
-        let mut bases = [JubJubAffine::from(base_point); BASE_SIZE];
+        let mut bases: [JubJubExtended; BASE_SIZE] = [JubJubAffine::from(base_point).into(); BASE_SIZE];
         bases.copy_from_slice(bases_vec.as_slice());
 
         Self { powers_of_p: bases }
@@ -129,13 +129,59 @@ fn multiplexer(ladder: PrecomputedBases, bits: &[i8]) -> JubJubAffine {
     let c = 4 * bits[2];
     let output = a + b + c;
 
-    let conditional = ladder.powers_of_p[output as usize];
+    let conditional: JubJubAffine = ladder.powers_of_p[output as usize].into();
 
     if bits[3] == -1 {
         conditional.neg()
     } else {
         conditional
     }
+}
+
+/// Calculate perdersen window using 4-bit lookup table
+fn multiplexer_using_lookup(ladder: PrecomputedBases, bits: &[bool]) -> JubJubAffine {
+    // multiplexer will use mux
+    todo!();
+}
+
+fn mul_point_with_bool(point: JubJubExtended, bit: bool) -> JubJubExtended {
+    if bit {
+        point
+    } else {
+        JubJubExtended::identity()
+    }
+}
+
+
+/// Calculate mux3 using 3-bit lookup table (native version)
+/// source: https://github.com/iden3/circomlib/blob/master/circuits/mux3.circom
+/// 
+/// * `c`: constant data
+/// * `bits`: selection bits
+fn mux3(c: &[JubJubExtended], s: &[bool]) -> JubJubExtended {
+    assert_eq!(c.len(), 8);
+    assert_eq!(s.len(), 3);
+    let s10 = s[1] & s[0];
+
+    let a210 = mul_point_with_bool(c[7]-c[6]-c[5]+c[4] - c[3]+c[2]+c[1]-c[0], s10);
+    let a21 = mul_point_with_bool(c[6]-c[4]-c[2]+c[0], s[1]);
+    let a20 = mul_point_with_bool(c[5]-c[4]-c[1]+c[0], s[0]);
+    let a2  = c[4]-c[0];
+
+    let a10 = mul_point_with_bool(c[3]-c[2]-c[1]+c[0], s10);
+    let a1 = mul_point_with_bool(c[2]-c[0], s[1]);
+    let a0 = mul_point_with_bool(c[1]-c[0], s[0]);
+    let a  = c[0];
+
+    let out = mul_point_with_bool(a210 + a21 + a20 + a2, s[2]) + a10 + a1 + a0 + a;
+    out 
+
+}
+
+/// Calculate mux3 using 3-bit lookup table (constraint version)
+fn mux3_gadget(data: JubJubAffine, bits: &[Variable]) -> JubJubAffine {
+    
+    todo!();
 }
 
 
@@ -182,6 +228,49 @@ pub fn circuit_pedersen(composer: &mut StandardComposer, scalar: [bool; 256]) ->
     );
 
     const CHUNK_SIZE: usize = 4; 
+    todo!()
 
 
+}
+
+#[cfg(test)]
+mod tests{
+    use dusk_jubjub::{JubJubScalar};
+
+    #[test]
+    fn test_mux3_native() {
+        let points = (0..8u64).map(|i| dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(i)).collect::<Vec<_>>();
+        assert_eq!(
+            super::mux3(&points, &[false, false, false]), // 0b000
+            points[0]
+        );
+        assert_eq!(
+            super::mux3(&points, &[true, false, false]),  // 0b001
+            points[1]
+        );
+        assert_eq!(
+            super::mux3(&points, &[false, true, false]),  // 0b010
+            points[2]
+        );
+        assert_eq!(
+            super::mux3(&points, &[true, true, false]),   // 0b011
+            points[3]
+        );
+        assert_eq!(
+            super::mux3(&points, &[false, false, true]),  // 0b100
+            points[4]
+        );
+        assert_eq!(
+            super::mux3(&points, &[true, false, true]),   // 0b101
+            points[5]
+        );
+        assert_eq!(
+            super::mux3(&points, &[false, true, true]),   // 0b110
+            points[6]
+        );
+        assert_eq!(
+            super::mux3(&points, &[true, true, true]),    // 0b111
+            points[7]
+        );
+    }
 }
