@@ -157,7 +157,7 @@ fn mul_point_with_bool(point: JubJubExtended, bit: bool) -> JubJubExtended {
 /// source: https://github.com/iden3/circomlib/blob/master/circuits/mux3.circom
 /// 
 /// * `c`: constant data
-/// * `bits`: selection bits
+/// * `s`: selection bits
 fn mux3(c: &[JubJubExtended], s: &[bool]) -> JubJubExtended {
     assert_eq!(c.len(), 8);
     assert_eq!(s.len(), 3);
@@ -174,103 +174,199 @@ fn mux3(c: &[JubJubExtended], s: &[bool]) -> JubJubExtended {
     let a  = c[0];
 
     let out = mul_point_with_bool(a210 + a21 + a20 + a2, s[2]) + a10 + a1 + a0 + a;
+    
     out 
 
 }
 
+/// calcualte 4-bit window using lookup table. First three bit looks up the table, and the last bit conditionally negate the output. 
+fn pedersen_4bit_window(ladder: &PrecomputedBases, bits: &[bool]) -> JubJubExtended {
+    assert_eq!(bits.len(), 4);
+    let mut selected_base = mux3(&ladder.powers_of_p, &bits[..3]);
+    if bits[3] {
+        selected_base = selected_base.neg();
+    }
+    selected_base
+}
+
+fn mul_point_with_bool_gadget(composer: &mut StandardComposer, point: JubJubExtended, bit: Variable) -> Point {
+    let temp = composer.add_affine_to_circuit_description(point.into()).into();
+    composer.conditional_select_identity(bit, temp)
+}
+
+/// calculate the sum of points
+/// Requires 2 * num_points constraints
+fn point_sum_gadget(composer: &mut StandardComposer, points: &[Point]) -> Point {
+    points[1..].iter().fold(points[0], |acc, point| composer.point_addition_gate(acc, *point))
+}
+
 /// Calculate mux3 using 3-bit lookup table (constraint version)
-fn mux3_gadget(data: JubJubAffine, bits: &[Variable]) -> JubJubAffine {
-    
-    todo!();
+/// We assume that the bits are already constrained by boolean. 
+/// 
+/// * `c`: constant data
+/// * `s`: selection bits
+pub fn mux3_gadget(composer: &mut StandardComposer, c: &[JubJubExtended], s: &[Variable]) -> Point {
+    assert_eq!(c.len(), 8);
+    assert_eq!(s.len(), 3);
+
+    let s10 = composer.mul(BlsScalar::one(), s[1], s[0], BlsScalar::zero() , None);
+
+    let a210 = mul_point_with_bool_gadget(composer, c[7]-c[6]-c[5]+c[4] - c[3]+c[2]+c[1]-c[0], s10);
+    let a21 = mul_point_with_bool_gadget(composer, c[6]-c[4]-c[2]+c[0], s[1]);
+    let a20 = mul_point_with_bool_gadget(composer, c[5]-c[4]-c[1]+c[0], s[0]);
+    let a2 = composer.add_affine_to_circuit_description((c[4]-c[0]).into());
+
+    let a10 = mul_point_with_bool_gadget(composer, c[3]-c[2]-c[1]+c[0], s10);
+    let a1 = mul_point_with_bool_gadget(composer, c[2]-c[0], s[1]);
+    let a0 = mul_point_with_bool_gadget(composer, c[1]-c[0], s[0]);
+    let a = composer.add_affine_to_circuit_description((c[0]).into());
+
+    // addition phase
+    let signal_before_select = point_sum_gadget(composer, &[a210, a21, a20, a2]);
+    let signal_after_select = composer.conditional_select_identity(s[2], signal_before_select);
+    let out = point_sum_gadget(composer, &[signal_after_select, a10, a1, a0, a]);
+
+    out
 }
 
+/// perdersen 4-bit window gadgets using lookup table
+fn pedersen_4bit_window_gadget(composer: &mut StandardComposer, ladder: &PrecomputedBases, bits: &[Variable]) -> Point {
+    assert_eq!(bits.len(), 4);
+    let selected_base = mux3_gadget(composer, &ladder.powers_of_p, &bits[..3]);
+    let selected_base_negated = composer.point_negation_gate(selected_base);
 
-
-/// This function is from the orginal method of encoding functions
-/// in pedersen hash 
-pub fn encode(composer: &mut StandardComposer, bits: [Variable; 4]) -> Variable {
-    // bits(m_j) = [b_0, b_1, b_3, b_4]
-    // ((2b_3) - 1) * (1 + b_0 + 2b_1 + 4b_2)
-
-    //TODO: Can the 1 be a public input? If so, it can help a lot.
-    let rhs = composer.big_add(
-        (BlsScalar::one(), bits[0]),
-        (BlsScalar::from(2), bits[1]),
-        Some((BlsScalar::from(4), bits[2])),
-        BlsScalar::zero(),
-        Some(BlsScalar::one()),
-    );
-
-    // let's say n = (1 + b_0 + 2b_1 + 4b_2)
-    // thus lhs = ((2b_3 * n) - n)
-    composer.big_mul(
-        BlsScalar::one(),
-        bits[3],
-        rhs,
-        Some((-BlsScalar::one(), rhs)),
-        BlsScalar::zero(),
-        None,
-    )
+    composer.conditional_point_select(selected_base_negated, selected_base, bits[3])
 }
 
-
-/// zk pedersen
-/// TODO: Hash from bytes or convert scalar internally
-pub fn circuit_pedersen(composer: &mut StandardComposer, scalar: [bool; 256]) -> Point {
-
-    let second_bases = scalar[200..].len() / 4;
-
-    let full_ladder = HashLadder::new(
-        GENERATOR_EXTENDED,
-        GENERATOR_NUMS_EXTENDED,
-        50,
-        second_bases,
-    );
-
-    const CHUNK_SIZE: usize = 4; 
-    todo!()
-
-
-}
 
 #[cfg(test)]
 mod tests{
-    use dusk_jubjub::{JubJubScalar};
+    use dusk_bls12_381::BlsScalar;
+    use dusk_jubjub::{JubJubExtended, JubJubScalar};
+    use dusk_plonk::{constraint_system::helper::gadget_tester, prelude::{Point, StandardComposer}}; 
+
+    use super::{PrecomputedBases, mux3, mux3_gadget, pedersen_4bit_window, pedersen_4bit_window_gadget};
 
     #[test]
     fn test_mux3_native() {
         let points = (0..8u64).map(|i| dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(i)).collect::<Vec<_>>();
         assert_eq!(
-            super::mux3(&points, &[false, false, false]), // 0b000
+            mux3(&points, &[false, false, false]), // 0b000
             points[0]
         );
         assert_eq!(
-            super::mux3(&points, &[true, false, false]),  // 0b001
+            mux3(&points, &[true, false, false]),  // 0b001
             points[1]
         );
         assert_eq!(
-            super::mux3(&points, &[false, true, false]),  // 0b010
+            mux3(&points, &[false, true, false]),  // 0b010
             points[2]
         );
         assert_eq!(
-            super::mux3(&points, &[true, true, false]),   // 0b011
+            mux3(&points, &[true, true, false]),   // 0b011
             points[3]
         );
         assert_eq!(
-            super::mux3(&points, &[false, false, true]),  // 0b100
+            mux3(&points, &[false, false, true]),  // 0b100
             points[4]
         );
         assert_eq!(
-            super::mux3(&points, &[true, false, true]),   // 0b101
+            mux3(&points, &[true, false, true]),   // 0b101
             points[5]
         );
         assert_eq!(
-            super::mux3(&points, &[false, true, true]),   // 0b110
+            mux3(&points, &[false, true, true]),   // 0b110
             points[6]
         );
         assert_eq!(
-            super::mux3(&points, &[true, true, true]),    // 0b111
+            mux3(&points, &[true, true, true]),    // 0b111
             points[7]
         );
+    }
+
+    fn test_three_bit_gadget_on_bit(composer: &mut StandardComposer, c: &[JubJubExtended], s: &[bool]) {
+        let expected = mux3(c, s);
+        let bits_var = s.iter().map(|b| composer.add_input(if *b {BlsScalar::one()} else {
+            BlsScalar::zero()
+        })).collect::<Vec<_>>();
+        let actual = mux3_gadget(composer, c, &bits_var);
+        composer.assert_equal_public_point(actual, expected.into());
+
+    }
+
+    fn test_pedersen_window_on_bit(composer: &mut StandardComposer, c: &PrecomputedBases, s: &[bool]) {
+        let expected = pedersen_4bit_window(c, s);
+        let bits_var = s.iter().map(|b| composer.add_input(if *b {BlsScalar::one()} else {
+            BlsScalar::zero()
+        })).collect::<Vec<_>>();
+        let actual = pedersen_4bit_window_gadget(composer, c, &bits_var);
+        composer.assert_equal_public_point(actual, expected.into());
+    }
+
+
+
+    #[test]
+    fn test_three_bit_mux_gadget() {
+        gadget_tester(|composer|{
+            let points = (0..8u64).map(|i| dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(i)).collect::<Vec<_>>();
+            test_three_bit_gadget_on_bit(composer, &points, &[false, false, false]);
+            test_three_bit_gadget_on_bit(composer, &points, &[true, false, false]);
+            test_three_bit_gadget_on_bit(composer, &points, &[false, true, false]);
+            test_three_bit_gadget_on_bit(composer, &points, &[true, true, false]);
+            test_three_bit_gadget_on_bit(composer, &points, &[false, false, true]);
+            test_three_bit_gadget_on_bit(composer, &points, &[true, false, true]);
+            test_three_bit_gadget_on_bit(composer, &points, &[false, true, true]);
+            test_three_bit_gadget_on_bit(composer, &points, &[true, true, true]);
+        }, 1000).unwrap();
+    }
+
+    #[test]
+    fn three_bit_constraints_stat() {
+        let mut composer = StandardComposer::new();
+        let composer = &mut composer;
+        let points = (0..8u64).map(|i| dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(i)).collect::<Vec<_>>();
+        test_three_bit_gadget_on_bit(composer, &points, &[false, false, false]);
+        test_three_bit_gadget_on_bit(composer, &points, &[true, false, false]);
+        test_three_bit_gadget_on_bit(composer, &points, &[false, true, false]);
+        test_three_bit_gadget_on_bit(composer, &points, &[true, true, false]);
+        test_three_bit_gadget_on_bit(composer, &points, &[false, false, true]);
+        test_three_bit_gadget_on_bit(composer, &points, &[true, false, true]);
+        test_three_bit_gadget_on_bit(composer, &points, &[false, true, true]);
+        test_three_bit_gadget_on_bit(composer, &points, &[true, true, true]);
+        println!("mux3 constraints size: {}", composer.circuit_size() / 8);
+    }
+
+    fn pedersen_window_gadget_test_template(composer: &mut StandardComposer) {
+        let base = PrecomputedBases::new(dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(6666u64));
+        test_pedersen_window_on_bit(composer, &base, &[false, false, false, false]);
+        test_pedersen_window_on_bit(composer, &base, &[true, false, false, false]);
+        test_pedersen_window_on_bit(composer, &base, &[false, true, false, false]);
+        test_pedersen_window_on_bit(composer, &base, &[true, true, false, false]);
+        test_pedersen_window_on_bit(composer, &base, &[false, false, true, false]);
+        test_pedersen_window_on_bit(composer, &base, &[true, false, true, false]);
+        test_pedersen_window_on_bit(composer, &base, &[false, true, true, false]);
+        test_pedersen_window_on_bit(composer, &base, &[true, true, true, false]);
+        test_pedersen_window_on_bit(composer, &base, &[false, false, false, true]);
+        test_pedersen_window_on_bit(composer, &base, &[true, false, false, true]);
+        test_pedersen_window_on_bit(composer, &base, &[false, true, false, true]);
+        test_pedersen_window_on_bit(composer, &base, &[true, true, false, true]);
+        test_pedersen_window_on_bit(composer, &base, &[false, false, true, true]);
+        test_pedersen_window_on_bit(composer, &base, &[true, false, true, true]);
+        test_pedersen_window_on_bit(composer, &base, &[false, true, true, true]);
+        test_pedersen_window_on_bit(composer, &base, &[true, true, true, true]);
+    }
+
+    #[test]
+    fn test_pedersen_window_gadget() {
+        gadget_tester(|composer|{
+            pedersen_window_gadget_test_template(composer);
+        }, 2000).unwrap();
+    }
+
+    #[test]
+    fn pedersen_window_gadget_stat() {
+        let mut composer = StandardComposer::new();
+        pedersen_window_gadget_test_template(&mut composer);
+        println!("pedersen window constraints size: {}", composer.circuit_size() / 16);
     }
 }

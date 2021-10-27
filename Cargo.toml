@@ -26,8 +26,10 @@ rand_core = "0.6.0"
 rand = "0.8"
 [dev-dependencies]
 
+[patch.crates-io]
+dusk-plonk = {git = "https://github.com/tsunrise/plonk.git", branch = "point_neg"}
 
 [features]
 std = [
     "dusk-plonk/std"
-]
+] 
