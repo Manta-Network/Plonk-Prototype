@@ -138,12 +138,6 @@ fn multiplexer(ladder: PrecomputedBases, bits: &[i8]) -> JubJubAffine {
     }
 }
 
-/// Calculate perdersen window using 4-bit lookup table
-fn multiplexer_using_lookup(ladder: PrecomputedBases, bits: &[bool]) -> JubJubAffine {
-    // multiplexer will use mux
-    todo!();
-}
-
 fn mul_point_with_bool(point: JubJubExtended, bit: bool) -> JubJubExtended {
     if bit {
         point
