@@ -303,7 +303,7 @@ mod tests{
             little_endian_range(8, 3).iter().for_each(|s| {
                 test_three_bit_point_gadget_on_bit(composer, &data, &s);
             });
-        }, 500).unwrap();
+        }, 150).unwrap();
     }
 
     #[test]
