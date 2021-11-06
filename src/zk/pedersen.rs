@@ -16,7 +16,7 @@
 
 //! Pedersen implementation
 
-use std::ops::Neg;
+use std::ops::{Add, Neg};
 
 use dusk_jubjub::{
     JubJubAffine, JubJubExtended, Scalar, GENERATOR, GENERATOR_EXTENDED, GENERATOR_NUMS_EXTENDED,
@@ -24,8 +24,9 @@ use dusk_jubjub::{
 use dusk_plonk::prelude::*;
 
 
-// we use 3-bit lookup tables for the pedersen hash
-const BASE_SIZE: usize = 8;
+const NUM_BITS_PER_CHUNK: usize = 4;
+// we use 3-bit lookup tables for the pedersen hash, each chunk is 4-bits. 
+const BASE_SIZE: usize = 1 << (NUM_BITS_PER_CHUNK - 1); // should be 8
 
 #[derive(Clone, Copy)]
 /// Precomputed powers of P..BASE_SIZE*P 
@@ -67,11 +68,16 @@ impl HashLadder {
 impl PedersenLadder {
     /// Construct Pedersen Ladder
     fn new(p: JubJubExtended, num_bases: usize) -> Self {
+        // we have p*(2^(5*0)), p*(2^(5*1)), p*(2^(5*2))), ..., p*(2^(5*(num_base-1)))) as each base
+        let base_point_step =  Scalar::from((2 as u64).pow(5 as u32));
+        let mut current_base_point = Scalar::one();
+
         let bases = (0..num_bases)
             .into_iter()
-            .map(|i| {
-                let base_point = p * Scalar::from((2 as u64).pow(5 * i as u32));
-                PrecomputedBases::new(base_point)
+            .map(|_| {
+                let result = PrecomputedBases::new(p * current_base_point);
+                current_base_point *= base_point_step;
+                result
             })
             .collect();
 
@@ -163,16 +169,6 @@ pub fn mux3_point_gadget(composer: &mut StandardComposer, c: &[JubJubAffine], s:
     Point::new(x, y)
 }
 
-/// calcualte 4-bit window using lookup table. First three bit looks up the table, and the last bit conditionally negate the output. 
-fn pedersen_4bit_window(ladder: &PrecomputedBases, bits: &[bool]) -> JubJubAffine {
-    let raw = mux3(&ladder.powers_of_p, &bits[..3]);
-    if bits[3] {
-        -raw
-    } else {
-        raw
-    }
-}
-
 /// If bits is true, negate the point. 
 fn conditional_point_neg(composer: &mut StandardComposer, point: &Point, bit: Variable) -> Point {
     let x = point.x();
@@ -183,22 +179,100 @@ fn conditional_point_neg(composer: &mut StandardComposer, point: &Point, bit: Va
     Point::new(x_updated, *y)
 }
 
+/// calcualte 4-bit window using lookup table. First three bit looks up the table, and the last bit conditionally negate the output. 
+fn pedersen_4bit_chunk(bases: &PrecomputedBases, bits: &[bool]) -> JubJubAffine {
+    let raw = mux3(&bases.powers_of_p, &bits[..3]);
+    if bits[3] {
+        -raw
+    } else {
+        raw
+    }
+}
+
 /// perdersen 4-bit window gadgets using lookup table
-fn pedersen_4bit_window_gadget(composer: &mut StandardComposer, ladder: &PrecomputedBases, bits: &[Variable]) -> Point {
-    let raw = mux3_point_gadget(composer, &ladder.powers_of_p, &bits[..3]);
+pub fn pedersen_4bit_chunk_gadget(composer: &mut StandardComposer, bases: &PrecomputedBases, bits: &[Variable]) -> Point {
+    let raw = mux3_point_gadget(composer, &bases.powers_of_p, &bits[..3]);
     conditional_point_neg(composer, &raw, bits[3])
 }
 
+pub fn pedersen_window(
+    ladder: &PedersenLadder,
+    bits: &[bool],
+) -> JubJubExtended {
+    let expected_bits = NUM_BITS_PER_CHUNK * ladder.rows.len();
+    assert_eq!(bits.len(), expected_bits);
 
+    // for each chunk, calculate the point and add them together
+    bits.chunks(NUM_BITS_PER_CHUNK).zip(ladder.rows.iter())
+        .map(|(s, bases)|pedersen_4bit_chunk(bases, s))
+        .fold(JubJubExtended::identity(), |acc, p| acc.add(JubJubExtended::from(p)))
+}
+
+pub fn pedersen_window_gadget(
+    composer: &mut StandardComposer,
+    ladder: &PedersenLadder,
+    bits: &[Variable],
+) -> Point {
+    let expected_bits = NUM_BITS_PER_CHUNK * ladder.rows.len();
+    assert_eq!(bits.len(), expected_bits);
+
+    let point_identity = Point::identity(composer);
+    // for each chunk, calculate the point and add them together
+    let points_for_each_chunk = bits.chunks(NUM_BITS_PER_CHUNK).zip(ladder.rows.iter())
+        .map(|(s, bases)|pedersen_4bit_chunk_gadget(composer, bases, s))
+        .collect::<Vec<_>>();
+    
+    points_for_each_chunk.into_iter().fold(point_identity, |acc, p| composer.point_addition_gate(acc, p))
+
+}
+
+/// Pedersen hash **without** padding. We assume that the input is already padded to the correct length.
+/// 
+/// **Invariant**: 
+/// - `input.len() == NUM_BITS_PER_CHUNK * num_chunks_in_window * ladders.len()`. Here `NUM_BITS_PER_CHUNK` is 4. 
+/// - for each `ladder`, `ladder.rows.len() == num_chunks_in_window`
+pub fn pedersen_hash(num_chunks_in_window: usize, ladders: &[PedersenLadder], input: &[bool]) -> JubJubExtended {
+    assert_eq!(input.len(), 4 * num_chunks_in_window * ladders.len());
+    assert!(ladders.iter().all(|l| l.rows.len() == num_chunks_in_window));
+
+    let num_bits_in_window = num_chunks_in_window * NUM_BITS_PER_CHUNK;
+    let point_identity = JubJubExtended::identity();
+    input.chunks(num_bits_in_window).zip(ladders.iter())
+        .map(|(s, l)|pedersen_window(l, s))
+        .fold(point_identity, |acc, p| acc.add(p))
+    
+}
+
+
+
+pub fn pedersen_hash_gadget(
+    num_chunks_in_window: usize,
+    composer: &mut StandardComposer,
+    ladders: &[PedersenLadder],
+    input: &[Variable],
+) -> Point {
+    assert_eq!(input.len(), 4 * num_chunks_in_window * ladders.len());
+    assert!(ladders.iter().all(|l| l.rows.len() == num_chunks_in_window));
+
+    let num_bits_in_window = num_chunks_in_window * NUM_BITS_PER_CHUNK;
+    let point_identity = Point::identity(composer);
+
+    let points_for_each_window = input.chunks(num_bits_in_window).zip(ladders.iter())
+        .map(|(s,l)|pedersen_window_gadget(composer, l, s))
+        .collect::<Vec<_>>();
+
+    points_for_each_window.into_iter().fold(point_identity, |acc, p| composer.point_addition_gate(acc, p))
+}
 #[cfg(test)]
 mod tests{
     use dusk_bls12_381::BlsScalar;
-    use dusk_jubjub::{GENERATOR_EXTENDED, JubJubAffine, JubJubExtended, JubJubScalar};
-    use dusk_plonk::{constraint_system::helper::gadget_tester, prelude::{Point, StandardComposer}};  
+    use dusk_jubjub::{GENERATOR_EXTENDED, JubJubAffine, JubJubScalar};
+    use dusk_plonk::{constraint_system::helper::gadget_tester, prelude::{StandardComposer}};
+    use rand::{Rng, SeedableRng, prelude::StdRng};  
 
-    use crate::zk::pedersen::mux3;
+    use crate::zk::pedersen::{mux3, pedersen_window, pedersen_window_gadget};
 
-    use super::{PrecomputedBases, mux3_point_gadget, mux3_variable_gadget, pedersen_4bit_window, pedersen_4bit_window_gadget};
+    use super::{NUM_BITS_PER_CHUNK, PedersenLadder, PrecomputedBases, mux3_point_gadget, mux3_variable_gadget, pedersen_4bit_chunk, pedersen_4bit_chunk_gadget};
 
     #[test]
     fn test_mux3_native() {
@@ -257,11 +331,11 @@ mod tests{
     }
 
     fn test_pedersen_window_on_bit(composer: &mut StandardComposer, c: &PrecomputedBases, s: &[bool], enforce: bool) {
-        let expected = pedersen_4bit_window(c, s);
+        let expected = pedersen_4bit_chunk(c, s);
         let bits_var = s.iter().map(|b| composer.add_input(if *b {BlsScalar::one()} else {
             BlsScalar::zero()
         })).collect::<Vec<_>>();
-        let actual = pedersen_4bit_window_gadget(composer, c, &bits_var);
+        let actual = pedersen_4bit_chunk_gadget(composer, c, &bits_var);
         if enforce {
             composer.assert_equal_public_point(actual, expected.into());
         }
@@ -317,7 +391,7 @@ mod tests{
         println!("mux3 point constraints size: {}", composer.circuit_size() / 8);
     }
 
-    fn pedersen_window_gadget_test_template(composer: &mut StandardComposer, enforce: bool) {
+    fn pedersen_chunk_gadget_test_template(composer: &mut StandardComposer, enforce: bool) {
         let base = PrecomputedBases::new(dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(6666u64));
         little_endian_range(16, 4).iter().for_each(|s| {
             test_pedersen_window_on_bit(composer, &base, &s, enforce);
@@ -325,16 +399,51 @@ mod tests{
     }
 
     #[test]
+    fn test_pedersen_chunk_gadget() {
+        gadget_tester(|composer|{
+            pedersen_chunk_gadget_test_template(composer, true);
+        }, 1000).unwrap();
+    }
+
+    #[test]
+    fn pedersen_chunk_gadget_stat() {
+        let mut composer = StandardComposer::new();
+        pedersen_chunk_gadget_test_template(&mut composer, false);
+        println!("pedersen window constraints size: {}", composer.circuit_size() / 16);
+    }
+
+    fn pedersen_window_gadget_test_template(composer: &mut StandardComposer, enforce: bool){
+        const NUM_CHUNKS: usize = 64;
+        let num_bits = NUM_BITS_PER_CHUNK * NUM_CHUNKS;
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let gen = GENERATOR_EXTENDED * JubJubScalar::from(6666u64);
+        let ladder = PedersenLadder::new(gen, NUM_CHUNKS);
+
+        let bits = (0..num_bits).map(|_| rng.gen::<bool>()).collect::<Vec<_>>();
+        let bits_var = bits.iter().map(|b| composer.add_input(if *b {BlsScalar::one()} else {
+            BlsScalar::zero()
+        })).collect::<Vec<_>>();
+
+        let expected = pedersen_window(&ladder, &bits);
+        let actual = pedersen_window_gadget(composer, &ladder,&bits_var);
+
+        if enforce {
+            composer.assert_equal_public_point(actual, expected.into());
+        }
+    }
+
+    #[test]
     fn test_pedersen_window_gadget() {
         gadget_tester(|composer|{
             pedersen_window_gadget_test_template(composer, true);
-        }, 1000).unwrap();
+        }, 2000).unwrap();
     }
 
     #[test]
     fn pedersen_window_gadget_stat() {
         let mut composer = StandardComposer::new();
         pedersen_window_gadget_test_template(&mut composer, false);
-        println!("pedersen window constraints size: {}", composer.circuit_size() / 16);
+        println!("pedersen window constraints size: {}", composer.circuit_size());
     }
 }
