@@ -120,11 +120,9 @@ fn mux3_subgadget(composer: &mut StandardComposer, v1: BlsScalar, v2: BlsScalar,
 /// 
 /// * `c`: constant data
 /// * `s`: selection bits
-pub fn mux3_variable_gadget(composer: &mut StandardComposer, c: &[BlsScalar], s: &[Variable]) -> Variable {
+pub fn mux3_variable_gadget(composer: &mut StandardComposer, s10: Variable, c: &[BlsScalar], s: &[Variable]) -> Variable {
     assert_eq!(c.len(), 8);
     assert_eq!(s.len(), 3);
-
-    let s10 = composer.mul(BlsScalar::one(), s[1], s[0], BlsScalar::zero() , None);
 
 
     let left = {
@@ -163,8 +161,10 @@ pub fn mux3_point_gadget(composer: &mut StandardComposer, c: &[JubJubAffine], s:
     let xs = c.iter().map(|p| p.get_x()).collect::<Vec<_>>();
     let ys = c.iter().map(|p| p.get_y()).collect::<Vec<_>>();
 
-    let x = mux3_variable_gadget(composer, &xs, &s);
-    let y = mux3_variable_gadget(composer, &ys, &s);
+    let s10 = composer.mul(BlsScalar::one(), s[1], s[0], BlsScalar::zero() , None);
+
+    let x = mux3_variable_gadget(composer, s10, &xs, &s);
+    let y = mux3_variable_gadget(composer, s10, &ys, &s);
 
     Point::new(x, y)
 }
@@ -316,7 +316,8 @@ mod tests{
         let bits_var = s.iter().map(|b| composer.add_input(if *b {BlsScalar::one()} else {
             BlsScalar::zero()
         })).collect::<Vec<_>>();
-        let actual = mux3_variable_gadget(composer, c, &bits_var);
+        let s10 = composer.mul(BlsScalar::one(), bits_var[1], bits_var[0], BlsScalar::zero() , None);
+        let actual = mux3_variable_gadget(composer, s10, c, &bits_var);
         composer.constrain_to_constant(actual, expected, None); 
 
     }
@@ -409,7 +410,7 @@ mod tests{
     fn pedersen_chunk_gadget_stat() {
         let mut composer = StandardComposer::new();
         pedersen_chunk_gadget_test_template(&mut composer, false);
-        println!("pedersen window constraints size: {}", composer.circuit_size() / 16);
+        println!("pedersen chunk constraints size: {}", composer.circuit_size() / 16);
     }
 
     fn pedersen_window_gadget_test_template(composer: &mut StandardComposer, enforce: bool){
