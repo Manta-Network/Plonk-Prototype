@@ -27,7 +27,7 @@ rand = "0.8"
 [dev-dependencies]
 
 [patch.crates-io]
-dusk-plonk = {path = "../plonk"}
+dusk-plonk = {branch = "point_neg", git = "https://github.com/tsunrise/plonk"}
 
 [features]
 std = [
