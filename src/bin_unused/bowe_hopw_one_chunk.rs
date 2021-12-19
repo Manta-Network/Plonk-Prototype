@@ -24,7 +24,7 @@ fn bowe_hopwood_native(gen: JubJubExtended, bits: &[bool]) -> JubJubExtended {
 pub struct BHOneChunk {
     gen: JubJubAffine,
     bits: Vec<bool>,
-    target_hash: JubJubAffine
+    target_hash: JubJubAffine,
 }
 
 impl Circuit for BHOneChunk {
@@ -78,8 +78,8 @@ impl Circuit for BHOneChunk {
 fn main() {
     let mut rng = StdRng::seed_from_u64(0x12345678);
     let gen = dusk_jubjub::GENERATOR_EXTENDED * JubJubScalar::from(rng.next_u64());
-    let mut bits = vec![false;3];
-    bits.iter_mut().for_each(|b|*b = rng.gen());
+    let mut bits = vec![false; 3];
+    bits.iter_mut().for_each(|b| *b = rng.gen());
     let native_result = bowe_hopwood_native(gen, &bits);
 
     let mut circuit = BHOneChunk {

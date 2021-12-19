@@ -16,9 +16,8 @@
 
 //! This module contains mod zk implementations for circuits related to manta network.
 
-pub mod allocated_scalar;
-pub mod circuits;
-pub mod gadgets;
-pub mod bowe_hopwood;
-pub use allocated_scalar::AllocatedScalar;
+// pub mod allocated_scalar; // This file is commented out because we do not use it for now.
+// pub mod circuits; // This file is commented out because we do not use it for now.
+// pub mod gadgets; // This file is commented out because we do not use it for now.
+// pub use allocated_scalar::AllocatedScalar;
 pub mod pedersen;
