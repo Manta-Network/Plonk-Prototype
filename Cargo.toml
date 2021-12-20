@@ -23,8 +23,14 @@ ark-plonk = {git = "https://github.com/rust-zkp/plonk"}
 ark-ec = { version = "0.3", features = ["std"] }
 ark-ff = { version = "0.3", features = ["std"] }
 ark-serialize = { version = "0.3", features = ["derive"] }
+ark-poly = "0.3"
+ark-poly-commit = "0.3"
 itertools = {version = "0.10.1", default-features = false}
 num-traits = "0.2.14"
+derivative = { version = "2.2.0", default-features = false, features = ["use_core"] }
+hashbrown = { version = "0.11.2", default-features = false, features = ["ahash"] }
+merlin = { version = "3.0", default-features = false }
+
 
 [dev-dependencies]
 ark-bls12-381 = "0.3"

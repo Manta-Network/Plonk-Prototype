@@ -14,5 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with manta-api.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod zk;
+//! This module contains mod zk implementations for circuits related to manta network.
+
+// pub mod allocated_scalar; // This file is commented out because we do not use it for now.
+// pub mod circuits; // This file is commented out because we do not use it for now.
+// pub mod gadgets; // This file is commented out because we do not use it for now.
+// pub use allocated_scalar::AllocatedScalar;
 pub mod sbox;
