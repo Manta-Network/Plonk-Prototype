@@ -1,4 +1,5 @@
 //! acknowledgement: adapted from FileCoin Project: https://github.com/filecoin-project/neptune/blob/master/src/matrix.rs
+use std::iter::FromIterator;
 use std::ops::{Index, IndexMut};
 
 use ark_ff::PrimeField;
@@ -64,6 +65,14 @@ impl<T: Clone> Index<usize> for Matrix<T> {
 impl<T: Clone> IndexMut<usize> for Matrix<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0[index]
+    }
+}
+
+// from iterator rows
+impl<F: Clone> FromIterator<Vec<F>> for Matrix<F> {
+    fn from_iter<T: IntoIterator<Item=Vec<F>>>(iter: T) -> Self {
+        let rows = iter.into_iter().collect::<Vec<_>>();
+        Self(rows)
     }
 }
 
@@ -385,6 +394,10 @@ mod tests {
     use super::*;
     use ark_ff::Zero;
     type Fr = ark_bls12_381::Fr;
+
+    struct Foo<const N: usize> {
+        data: [i32; N],
+    }
 
     #[test]
     fn test_minor() {
