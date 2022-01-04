@@ -6,7 +6,7 @@ edition = "2018"
 readme = "README.md"
 repository = "https://github.com/Manta-Network/Plonk-Prototype"
 keywords = ["cryptography", "circuits", "zk-snarks", "zero-knowledge", "crypto"]
-categories =["algorithms", "cryptography", "science"]
+categories = ["algorithms", "cryptography", "science"]
 description = "An implementation of various circuits within Manta Network"
 license = "MPL-2.0"
 exclude = [
@@ -20,7 +20,7 @@ rand_core = "0.6.0"
 rand = "0.8"
 thiserror = "1.0.30"
 
-ark-plonk = { version = "^0.8", git = "https://github.com/rust-zkp/ark-plonk", default-features = false } 
+ark-plonk = { version = "^0.8", git = "https://github.com/rust-zkp/ark-plonk", default-features = false }
 # arkworks-plonk-circuits = {git = "https://github.com/webb-tools/arkworks-gadgets"}
 # arkworks-utils = {git = "https://github.com/webb-tools/arkworks-gadgets"}
 # arkworks-gadgets = {git = "https://github.com/webb-tools/arkworks-gadgets"}
@@ -28,26 +28,24 @@ ark-ec = { version = "0.3", features = ["std"] }
 ark-ff = { version = "0.3", features = ["std"] }
 ark-serialize = { version = "0.3", features = ["derive"] }
 ark-poly = "0.3"
-ark-poly-commit = "0.3" 
+ark-poly-commit = "0.3"
 ark-crypto-primitives = { version = "^0.3.0", features = ["r1cs"], default-features = false }
-ark-std = { version = "^0.3.0", default-features = false}
-itertools = {version = "0.10.1", default-features = false}
+ark-std = { version = "^0.3.0", default-features = false }
+itertools = { version = "0.10.1", default-features = false }
 num-traits = "0.2.14"
 derivative = { version = "2.2.0", default-features = false, features = ["use_core"] }
 hashbrown = { version = "0.11.2", default-features = false, features = ["ahash"] }
 # merlin = { version = "3.0", default-features = false }
 
 # curves
-ark-ed-on-bn254 = { version = "^0.3.0", default-features = false, features = [ "r1cs" ] }
-ark-bn254 = { version = "^0.3.0", default-features = false, features = [ "curve" ] }
-ark-bls12-381 = { version = "^0.3.0", default-features = false, features = [ "curve" ] }
-ark-ed-on-bls12-381 = { version = "^0.3.0", default-features = false, features = [ "r1cs" ] }
+ark-ed-on-bn254 = { version = "^0.3.0", default-features = false, features = ["r1cs"] }
+ark-bn254 = { version = "^0.3.0", default-features = false, features = ["curve"] }
+ark-bls12-381 = { version = "^0.3.0", default-features = false, features = ["curve"] }
+ark-ed-on-bls12-381 = { version = "^0.3.0", default-features = false, features = ["r1cs"] }
 
 
 [dev-dependencies]
 rand = "0.8"
 
 [features]
-std = [
-    "dusk-plonk/std"
-]
+std = []

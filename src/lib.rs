@@ -15,4 +15,4 @@
 // along with manta-api.  If not, see <http://www.gnu.org/licenses/>.
 
 pub mod poseidon;
-pub mod zk;
+// pub mod zk;
