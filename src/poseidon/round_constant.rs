@@ -24,6 +24,7 @@ pub fn generate_constants<F: PrimeField>(
     };
     assert_eq!((field_size as f32 / 8.0).ceil() as usize, n_bytes);
 
+    // r_f here is 2* number of *half* full rounds.
     let num_constants = (r_f + r_p) * t;
     let mut init_sequence: VecDeque<bool> = VecDeque::new();
     append_bits(&mut init_sequence, 2, field); // Bits 0-1
