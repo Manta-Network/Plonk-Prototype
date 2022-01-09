@@ -156,26 +156,6 @@ where
         c.zero_var()
     }
 
-    // fn com_add(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
-    //     c.arithmetic_gate(|g| g.witness(*a, *b, None))
-    // }
-    //
-    // /// Simply calling neg is inefficient.
-    // fn com_neg(c: &mut StandardComposer<E, P>, a: &Self) -> Self {
-    //     let zero = c.zero_var();
-    //     c.arithmetic_gate(|g| {
-    //         g.witness(*a, zero, None)
-    //             .add(<<E as PairingEngine>::Fr as One>::one(), E::Fr::from(0u64))
-    //     })
-    // }
-    //
-    // fn com_mul(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
-    //     c.arithmetic_gate(|g| {
-    //         g.witness(*a, *b, None)
-    //             .mul(<<E as PairingEngine>::Fr as One>::one())
-    //     })
-    // }
-
     fn com_add(&self, b: &Self, c: &mut StandardComposer<E, P>) -> Self {
         c.arithmetic_gate(|g| g.witness(*self, *b, None))
     }
@@ -229,9 +209,9 @@ where
         config: ArithExtBuilder<Self, StandardComposer<E, P>>,
     ) -> Self {
         c.arithmetic_gate(|g| {
-            g.witness(config.w_l, config.w_r, None);
-            g.mul(config.q_m);
-            g.add(config.q_l, config.q_r);
+            g.witness(config.w_l, config.w_r, None)
+            .mul(config.q_m);
+            .add(config.q_l, config.q_r);
             if let Some((q_4, w_4)) = config.q_4_w_4 {
                 g.fan_in_3(q_4, w_4);
             };
