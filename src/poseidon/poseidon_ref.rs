@@ -1,11 +1,11 @@
 //! Correct, Naive, reference implementation of Poseidon hash function.
 
-use std::convert::TryInto;
+use crate::poseidon::{
+    mds::MdsMatrices, round_constant::generate_constants, round_numbers::calc_round_numbers,
+    PoseidonError,
+};
 use ark_ff::PrimeField;
-use crate::poseidon::mds::MdsMatrices;
-use crate::poseidon::PoseidonError;
-use crate::poseidon::round_constant::generate_constants;
-use crate::poseidon::round_numbers::calc_round_numbers;
+use std::convert::TryInto;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoseidonConstants<F: PrimeField> {
@@ -30,8 +30,12 @@ impl<F: PrimeField> PoseidonConstants<F> {
             1, // sbox
             F::size_in_bits() as u16,
             WIDTH.try_into().expect("WIDTH is too large"),
-            num_full_rounds.try_into().expect("num_full_rounds is too large"),
-            num_partial_rounds.try_into().expect("num_partial_rounds is too large"),
+            num_full_rounds
+                .try_into()
+                .expect("num_full_rounds is too large"),
+            num_partial_rounds
+                .try_into()
+                .expect("num_partial_rounds is too large"),
         );
         let domain_tag = F::from(((1 << arity) - 1) as u64);
         PoseidonConstants {
@@ -81,7 +85,8 @@ impl<F: PrimeField, const WIDTH: usize> Poseidon<F, WIDTH> {
         self.pos = 1;
     }
 
-    /// input one field element to Poseidon. Return the position of the element in state.
+    /// input one field element to Poseidon. Return the position of the element
+    /// in state.
     pub fn input(&mut self, input: F) -> Result<usize, PoseidonError> {
         // Cannot input more elements than the defined constant width
         if self.pos >= WIDTH {
@@ -113,7 +118,8 @@ impl<F: PrimeField, const WIDTH: usize> Poseidon<F, WIDTH> {
     }
 
     fn full_round(&mut self) {
-        let pre_round_keys = self.constants
+        let pre_round_keys = self
+            .constants
             .round_constants
             .iter()
             .skip(self.constants_offset)
@@ -142,9 +148,11 @@ impl<F: PrimeField, const WIDTH: usize> Poseidon<F, WIDTH> {
     }
 
     fn add_round_constants(&mut self) {
-        for (element, round_constant) in self.elements
+        for (element, round_constant) in self
+            .elements
             .iter_mut()
-            .zip(self.constants.round_constants.iter()).skip(self.constants_offset)
+            .zip(self.constants.round_constants.iter())
+            .skip(self.constants_offset)
         {
             *element += round_constant;
         }
@@ -197,7 +205,9 @@ mod tests {
 
         let param = PoseidonConstants::generate::<WIDTH>();
         let mut poseidon = Poseidon::<Fr, WIDTH>::new(param);
-        (0..ARITY).for_each(|_| { let _ = poseidon.input(Fr::rand(&mut rng)).unwrap(); });
+        (0..ARITY).for_each(|_| {
+            let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
+        });
         let _ = poseidon.output_hash();
     }
 
@@ -211,8 +221,9 @@ mod tests {
 
         let param = PoseidonConstants::generate::<WIDTH>();
         let mut poseidon = Poseidon::<Fr, WIDTH>::new(param);
-        (0..(ARITY + 1)).for_each(|_| { let _ = poseidon.input(Fr::rand(&mut rng)).unwrap(); });
+        (0..(ARITY + 1)).for_each(|_| {
+            let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
+        });
         let _ = poseidon.output_hash();
     }
 }
-

@@ -20,7 +20,7 @@ rand_core = "0.6.0"
 rand = "0.8"
 thiserror = "1.0.30"
 
-ark-plonk = { git = "https://github.com/rust-zkp/ark-plonk", features = ["trace"] }
+ark-plonk = { git = "https://github.com/zk-garage/plonk", package = "plonk", version = "*" }
 # arkworks-plonk-circuits = {git = "https://github.com/webb-tools/arkworks-gadgets"}
 # arkworks-utils = {git = "https://github.com/webb-tools/arkworks-gadgets"}
 # arkworks-gadgets = {git = "https://github.com/webb-tools/arkworks-gadgets"}

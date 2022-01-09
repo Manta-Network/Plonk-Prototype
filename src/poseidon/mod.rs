@@ -4,6 +4,7 @@ pub mod round_constant;
 pub mod poseidon_ref;
 pub mod round_numbers;
 pub mod constraints;
+pub mod field;
 
 use thiserror::Error;
 
