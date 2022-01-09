@@ -17,7 +17,7 @@ pub trait COMArith<COM = ()>: Sized {
     /// multiply field element by `-1`
     fn com_neg(&self, c: &mut COM) -> Self;
     /// subtract two field elements
-    fn com_mul(&self, other: &Self,c: &mut COM) -> Self;
+    fn com_mul(&self, other: &Self, c: &mut COM) -> Self;
     fn com_add_assign(&mut self, other: &Self, c: &mut COM) {
         *self = self.com_add(other, c);
     }
@@ -169,12 +169,8 @@ where
     }
 
     fn com_mul(&self, other: &Self, c: &mut StandardComposer<E, P>) -> Self {
-        c.arithmetic_gate(|g| {
-            g.witness(*self, *other, None)
-                .mul(E::Fr::one())
-        })
+        c.arithmetic_gate(|g| g.witness(*self, *other, None).mul(E::Fr::one()))
     }
-
 }
 
 impl<F: PrimeField> COMArithExt<()> for F {
@@ -209,9 +205,8 @@ where
         config: ArithExtBuilder<Self, StandardComposer<E, P>>,
     ) -> Self {
         c.arithmetic_gate(|g| {
-            g.witness(config.w_l, config.w_r, None)
-            .mul(config.q_m);
-            .add(config.q_l, config.q_r);
+            g.witness(config.w_l, config.w_r, None).mul(config.q_m);
+            g.add(config.q_l, config.q_r);
             if let Some((q_4, w_4)) = config.q_4_w_4 {
                 g.fan_in_3(q_4, w_4);
             };
