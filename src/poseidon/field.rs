@@ -8,34 +8,36 @@ use num_traits::One;
 use std::marker::PhantomData;
 
 pub trait COMArith<COM = ()>: Sized {
+    // I added `com_` prefix here to avoid conflict with num_traits. Any suggestion
+    // is welcome!
     /// additive identity
-    fn zero(c: &mut COM) -> Self;
+    fn com_zero(c: &mut COM) -> Self;
     /// add two field elements
-    fn add(c: &mut COM, a: &Self, b: &Self) -> Self;
+    fn com_add(&self, b: &Self, c: &mut COM) -> Self;
     /// multiply field element by `-1`
-    fn neg(c: &mut COM, a: &Self) -> Self;
+    fn com_neg(&self, c: &mut COM) -> Self;
     /// subtract two field elements
-    fn mul(c: &mut COM, a: &Self, b: &Self) -> Self;
-    fn add_assign(c: &mut COM, a: &mut Self, b: &Self) {
-        *a = Self::add(c, a, b);
+    fn com_mul(&self, other: &Self,c: &mut COM) -> Self;
+    fn com_add_assign(&mut self, other: &Self, c: &mut COM) {
+        *self = self.com_add(other, c);
     }
 }
 
 pub trait COMOne<COM = ()>: COMArith<()> + Sized {
     /// multiplicative identity
-    fn one(c: &mut COM) -> Self;
+    fn com_one(c: &mut COM) -> Self;
 }
 
 pub trait COMPower<COM = ()>: COMArith<()> + Sized {
     type Scalar;
-    fn pow(c: &mut COM, a: &Self, b: &Self::Scalar) -> Self;
+    fn com_pow(&self, exp: &Self::Scalar, c: &mut COM) -> Self;
 }
 
 pub trait COMArithExt<COM = ()>: COMArith<COM> + Sized {
     type Native: COMArith<()> + COMOne<()>;
     type PublicInput;
     fn __make_arith_gate(c: &mut COM, config: ArithExtBuilder<Self, COM>) -> Self;
-    fn arith(c: &mut COM) -> ArithExtBuilder<Self, COM> {
+    fn com_arith(c: &mut COM) -> ArithExtBuilder<Self, COM> {
         ArithExtBuilder::new(c)
     }
 }
@@ -58,13 +60,13 @@ pub struct ArithExtBuilder<F: COMArithExt<COM>, COM = ()> {
 impl<F: COMArithExt<COM>, COM> ArithExtBuilder<F, COM> {
     pub(crate) fn new(c: &mut COM) -> Self {
         Self {
-            w_l: F::zero(c),
-            w_r: F::zero(c),
-            q_m: F::Native::zero(&mut ()),
-            q_l: F::Native::zero(&mut ()),
-            q_r: F::Native::zero(&mut ()),
-            q_c: F::Native::zero(&mut ()),
-            q_o: F::Native::one(&mut ()),
+            w_l: F::com_zero(c),
+            w_r: F::com_zero(c),
+            q_m: F::Native::com_zero(&mut ()),
+            q_l: F::Native::com_zero(&mut ()),
+            q_r: F::Native::com_zero(&mut ()),
+            q_c: F::Native::com_zero(&mut ()),
+            q_o: F::Native::com_one(&mut ()).com_neg(&mut ()),
             q_4_w_4: None,
             pi: None,
             _compiler: PhantomData,
@@ -122,25 +124,25 @@ impl<F: COMArithExt<COM>, COM> ArithExtBuilder<F, COM> {
 }
 
 impl<F: PrimeField> COMArith<()> for F {
-    fn zero(_c: &mut ()) -> Self {
+    fn com_zero(_c: &mut ()) -> Self {
         F::zero()
     }
 
-    fn add(_c: &mut (), a: &Self, b: &Self) -> Self {
-        a.add(b)
+    fn com_add(&self, b: &Self, _c: &mut ()) -> Self {
+        *self + *b
     }
 
-    fn neg(_c: &mut (), a: &Self) -> Self {
-        a.neg()
+    fn com_neg(&self, _c: &mut ()) -> Self {
+        -*self
     }
 
-    fn mul(_c: &mut (), a: &Self, b: &Self) -> Self {
-        a.mul(b)
+    fn com_mul(&self, other: &Self, _c: &mut ()) -> Self {
+        *self * *other
     }
 }
 
 impl<F: PrimeField> COMOne<()> for F {
-    fn one(_c: &mut ()) -> Self {
+    fn com_one(_c: &mut ()) -> Self {
         F::one()
     }
 }
@@ -150,29 +152,49 @@ where
     E: PairingEngine,
     P: TEModelParameters<BaseField = E::Fr>,
 {
-    fn zero(c: &mut StandardComposer<E, P>) -> Self {
+    fn com_zero(c: &mut StandardComposer<E, P>) -> Self {
         c.zero_var()
     }
 
-    fn add(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
-        c.arithmetic_gate(|g| g.witness(*a, *b, None))
+    // fn com_add(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
+    //     c.arithmetic_gate(|g| g.witness(*a, *b, None))
+    // }
+    //
+    // /// Simply calling neg is inefficient.
+    // fn com_neg(c: &mut StandardComposer<E, P>, a: &Self) -> Self {
+    //     let zero = c.zero_var();
+    //     c.arithmetic_gate(|g| {
+    //         g.witness(*a, zero, None)
+    //             .add(<<E as PairingEngine>::Fr as One>::one(), E::Fr::from(0u64))
+    //     })
+    // }
+    //
+    // fn com_mul(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
+    //     c.arithmetic_gate(|g| {
+    //         g.witness(*a, *b, None)
+    //             .mul(<<E as PairingEngine>::Fr as One>::one())
+    //     })
+    // }
+
+    fn com_add(&self, b: &Self, c: &mut StandardComposer<E, P>) -> Self {
+        c.arithmetic_gate(|g| g.witness(*self, *b, None))
     }
 
-    /// Simply calling neg is inefficient.
-    fn neg(c: &mut StandardComposer<E, P>, a: &Self) -> Self {
+    fn com_neg(&self, c: &mut StandardComposer<E, P>) -> Self {
         let zero = c.zero_var();
         c.arithmetic_gate(|g| {
-            g.witness(*a, zero, None)
-                .add(<<E as PairingEngine>::Fr as One>::one(), E::Fr::from(0u64))
+            g.witness(*self, zero, None)
+                .add(E::Fr::one(), E::Fr::from(0u64))
         })
     }
 
-    fn mul(c: &mut StandardComposer<E, P>, a: &Self, b: &Self) -> Self {
+    fn com_mul(&self, other: &Self, c: &mut StandardComposer<E, P>) -> Self {
         c.arithmetic_gate(|g| {
-            g.witness(*a, *b, None)
-                .mul(<<E as PairingEngine>::Fr as One>::one())
+            g.witness(*self, *other, None)
+                .mul(E::Fr::one())
         })
     }
+
 }
 
 impl<F: PrimeField> COMArithExt<()> for F {
@@ -220,5 +242,31 @@ where
             }
             g
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bls12_381::Fr;
+    use ark_std::{test_rng, UniformRand};
+
+    #[test]
+    fn sanity_check_on_native() {
+        // calculate 3xy + 2x + y + 1
+        let mut rng = test_rng();
+        let x = Fr::rand(&mut rng);
+        let y = Fr::rand(&mut rng);
+        let expected = (Fr::from(3u64) * x * y) + (Fr::from(2u64) * x) + y + Fr::one();
+        let actual = Fr::com_arith(&mut ())
+            .w_l(x)
+            .w_r(y)
+            .q_m(3u64.into())
+            .q_l(2u64.into())
+            .q_r(Fr::one())
+            .q_c(Fr::one())
+            .build(&mut ());
+
+        assert_eq!(expected, actual);
     }
 }
