@@ -66,6 +66,8 @@ pub trait COMPower<COM = ()>: COMArith<()> + Sized {
 
 pub trait COMArithExt<COM = ()>: COMArith<COM> + Sized {
     fn __make_arith_gate(c: &mut COM, config: ArithExtBuilder<Self, COM>) -> Self;
+    /// `(w_l * w_r) * q_m + a * q_l + b * q_r + w_4 * q_4 + q_c + PI + q_o * c = 0`
+    /// where output is `c`
     fn com_arith(c: &mut COM) -> ArithExtBuilder<Self, COM> {
         ArithExtBuilder::new(c)
     }

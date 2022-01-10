@@ -93,6 +93,21 @@ impl<E, P> PoseidonSpec<StandardComposer<E, P>> for PoseidonRefPlonkSpec
         P: TEModelParameters<BaseField = E::Fr>,
 {
     type Field = Variable;
+
+    fn quintic_s_box(c: &mut StandardComposer<E, P>, x: Self::Field, pre_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>, post_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>) -> Self::Field {
+        // TODO: optimize this for plonk
+        let mut tmp = match pre_add {
+            Some(a) => x.com_add_const(c, &a),
+            None => x.clone(),
+        };
+        tmp = tmp.com_square(c);
+        tmp = tmp.com_square(c);
+        match post_add {
+            Some(a) => Variable::com_arith(c).w_l(tmp).w_r(x).q_c(a).build(c),
+            None => Variable::com_arith(c).w_l(tmp).w_r(x).build(c)
+        }
+
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
