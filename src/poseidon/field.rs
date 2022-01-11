@@ -4,7 +4,7 @@
 use std::fmt::Debug;
 use ark_ec::{PairingEngine, TEModelParameters};
 use ark_ff::PrimeField;
-use ark_plonk::prelude::*;
+use plonk_core::prelude::*;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
@@ -29,13 +29,13 @@ pub trait COMArith<COM = ()>: Sized + Clone + Debug {
     /// add two field elements
     fn com_add(&self, c: &mut COM, b: &Self) -> Self;
     /// add a constant
-    fn com_add_const(&self, c: &mut COM, b: &Self::Native) -> Self;
+    fn com_addi(&self, c: &mut COM, b: &Self::Native) -> Self;
     /// the additive inverse of a field element
     fn com_neg(&self, c: &mut COM) -> Self;
     /// multiply two field elements
     fn com_mul(&self, c: &mut COM, other: &Self) -> Self;
     /// multiply a field element by a constant
-    fn com_mul_const(&self, c: &mut COM, other: &Self::Native) -> Self;
+    fn com_muli(&self, c: &mut COM, other: &Self::Native) -> Self;
     fn com_square(&self, c: &mut COM) -> Self {
         self.com_mul(c, self)
     }
@@ -46,10 +46,10 @@ pub trait COMArith<COM = ()>: Sized + Clone + Debug {
         *self = self.com_mul(c, other);
     }
     fn com_add_assign_const(&mut self, c: &mut COM, other: &Self::Native) {
-        *self = self.com_add_const(c, other);
+        *self = self.com_addi(c, other);
     }
     fn com_mul_assign_const(&mut self, c: &mut COM, other: &Self::Native) {
-        *self = self.com_mul_const(c, other);
+        *self = self.com_muli(c, other);
     }
 }
 
@@ -116,9 +116,19 @@ impl<F: COMArithExt<COM>, COM> ArithExtBuilder<F, COM> {
         self
     }
 
+    pub fn witness(mut self, w_l: F, w_r: F) -> Self{
+        self.w_l = w_l;
+        self.w_r = w_r;
+        self
+    }
+
     pub fn q_m(mut self, q_m: F::Native) -> Self {
         self.q_m = q_m;
         self
+    }
+
+    pub fn mul(mut self) -> Self {
+        self.q_m(F::Native::com_one(&mut ()))
     }
 
     pub fn q_l(mut self, q_l: F::Native) -> Self {
@@ -175,7 +185,7 @@ impl<F: PrimeField> COMArith<()> for F {
         *self + *b
     }
 
-    fn com_add_const(&self, _c: &mut (), b: &Self::Native) -> Self {
+    fn com_addi(&self, _c: &mut (), b: &Self::Native) -> Self {
         *self + *b
     }
 
@@ -187,7 +197,7 @@ impl<F: PrimeField> COMArith<()> for F {
         *self * *other
     }
 
-    fn com_mul_const(&self, _c: &mut (), other: &Self::Native) -> Self {
+    fn com_muli(&self, _c: &mut (), other: &Self::Native) -> Self {
         *self * *other
     }
 }
@@ -243,7 +253,7 @@ where
         c.arithmetic_gate(|g| g.witness(*self, *b, None).add(E::Fr::one(), E::Fr::one()))
     }
 
-    fn com_add_const(&self, c: &mut StandardComposer<E, P>, b: &Self::Native) -> Self {
+    fn com_addi(&self, c: &mut StandardComposer<E, P>, b: &Self::Native) -> Self {
         let zero = c.zero_var();
         c.arithmetic_gate(|g| {
             g.witness(*self, zero, None)
@@ -261,7 +271,7 @@ where
         c.arithmetic_gate(|g| g.witness(*self, *other, None).mul(E::Fr::one()))
     }
 
-    fn com_mul_const(&self, c: &mut StandardComposer<E, P>, other: &Self::Native) -> Self {
+    fn com_muli(&self, c: &mut StandardComposer<E, P>, other: &Self::Native) -> Self {
         let zero = c.zero_var();
         c.arithmetic_gate(|g| {
             g.witness(*self, zero, None)

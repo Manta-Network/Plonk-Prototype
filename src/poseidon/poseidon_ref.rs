@@ -9,7 +9,8 @@ use ark_ff::PrimeField;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use ark_ec::{PairingEngine, TEModelParameters};
-use ark_plonk::prelude::{StandardComposer, Variable};
+use num_traits::One;
+use plonk_core::prelude::{StandardComposer, Variable};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PoseidonConstants<F: PrimeField> {
@@ -64,14 +65,14 @@ pub trait PoseidonSpec<COM = ()> {
         post_add: Option<NativeField<Self::Field, COM>>,
     ) -> Self::Field {
         let mut tmp = match pre_add {
-            Some(a) => x.com_add_const(c, &a),
+            Some(a) => x.com_addi(c, &a),
             None => x.clone(),
         };
         tmp = tmp.com_square(c);
         tmp = tmp.com_square(c);
         tmp.com_mul_assign(c, &x);
         match post_add {
-            Some(a) => tmp.com_add_const(c, &a),
+            Some(a) => tmp.com_addi(c, &a),
             None => tmp,
         }
     }
@@ -97,16 +98,15 @@ impl<E, P> PoseidonSpec<StandardComposer<E, P>> for PoseidonRefPlonkSpec
     fn quintic_s_box(c: &mut StandardComposer<E, P>, x: Self::Field, pre_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>, post_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>) -> Self::Field {
         // TODO: optimize this for plonk
         let mut tmp = match pre_add {
-            Some(a) => x.com_add_const(c, &a),
+            Some(a) => x.com_addi(c, &a),
             None => x.clone(),
         };
         tmp = tmp.com_square(c);
         tmp = tmp.com_square(c);
         match post_add {
-            Some(a) => Variable::com_arith(c).w_l(tmp).w_r(x).q_c(a).build(c),
-            None => Variable::com_arith(c).w_l(tmp).w_r(x).build(c)
+            Some(a) => Variable::com_arith(c).w_l(tmp).w_r(x).mul().q_c(a).build(c),
+            None => Variable::com_arith(c).w_l(tmp).w_r(x).mul().build(c)
         }
-
     }
 }
 
@@ -221,7 +221,7 @@ where
             .zip(self.constants.round_constants.iter())
             .skip(self.constants_offset)
         {
-            element.com_add_const(c, round_constant);
+            element.com_addi(c, round_constant);
         }
 
         self.constants_offset += self.elements.len();
@@ -253,7 +253,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bls12_381::Fr;
+    type E = ark_bls12_381::Bls12_381;
+    type P = ark_ed_on_bls12_381::EdwardsParameters;
+    type Fr = <E as PairingEngine>::Fr;
     use ark_std::{test_rng, UniformRand};
 
     #[test]
@@ -264,11 +266,29 @@ mod tests {
         let mut rng = test_rng();
 
         let param = PoseidonConstants::generate::<WIDTH>();
-        let mut poseidon = Poseidon::<(), PoseidonRefNativeSpec<Fr>, WIDTH>::new(&mut (), param);
-        (0..ARITY).for_each(|_| {
-            let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
+        let mut poseidon = Poseidon::<(), PoseidonRefNativeSpec<Fr>, WIDTH>::new(&mut (), param.clone());
+        let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+
+        inputs.iter().for_each(|x| {
+            let _ = poseidon.input(*x).unwrap();
         });
-        let _ = poseidon.output_hash(&mut ());
+        let native_hash: Fr = poseidon.output_hash(&mut ());
+
+        let mut c = StandardComposer::<E, P>::new();
+        let inputs_var = inputs.iter().map(|x| Variable::com_alloc(&mut c, *x)).collect::<Vec<_>>();
+        let mut poseidon_circuit = Poseidon::<_, PoseidonRefPlonkSpec, WIDTH>::new(&mut c, param);
+        inputs_var.iter().for_each(|x| {
+            let _ = poseidon_circuit.input(*x).unwrap();
+        });
+        let plonk_hash= poseidon_circuit.output_hash(&mut c);
+
+        c.check_circuit_satisfied();
+
+        let expected = c.add_input(native_hash);
+        c.assert_equal(expected, plonk_hash);
+
+        c.check_circuit_satisfied();
+
     }
 
     #[test]

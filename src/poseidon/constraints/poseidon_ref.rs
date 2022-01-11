@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use ark_ec::{PairingEngine, TEModelParameters};
-use ark_plonk::prelude::*;
+use plonk_core::prelude::*;
 use crate::poseidon::matrix::Matrix;
 use crate::poseidon::poseidon_ref::PoseidonConstants;
 
