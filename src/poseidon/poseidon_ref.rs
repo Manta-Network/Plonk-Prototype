@@ -369,7 +369,7 @@ mod r1cs {
         }
 
         fn addi(
-            c: &mut ConstraintSystemRef<F>,
+            _c: &mut ConstraintSystemRef<F>,
             a: &Self::Field,
             b: &Self::ParameterField,
         ) -> Self::Field {
