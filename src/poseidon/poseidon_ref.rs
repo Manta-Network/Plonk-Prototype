@@ -455,7 +455,8 @@ mod tests {
         let native_hash: Fr = poseidon.output_hash(&mut ());
 
         let mut cs = ConstraintSystem::new_ref();
-        let mut poseidon_var = Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, param.clone());
+        let mut poseidon_var =
+            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, param.clone());
         let inputs_var = inputs
             .iter()
             .map(|x| R1csSpec::<_, WIDTH>::alloc(&mut cs, *x))

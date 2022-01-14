@@ -70,7 +70,7 @@ impl<T: Clone> IndexMut<usize> for Matrix<T> {
 
 // from iterator rows
 impl<F: Clone> FromIterator<Vec<F>> for Matrix<F> {
-    fn from_iter<T: IntoIterator<Item=Vec<F>>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = Vec<F>>>(iter: T) -> Self {
         let rows = iter.into_iter().collect::<Vec<_>>();
         Self(rows)
     }
@@ -98,6 +98,11 @@ impl<F: PrimeField> Matrix<F> {
             }
         }
         true
+    }
+
+    /// check if `self` is square and `self[1..][1..]` is identity
+    pub fn is_sparse(&self) -> bool {
+        self.is_square() && self.minor(0,0).is_identity()
     }
 
     pub fn mul_by_scalar(&self, scalar: F) -> Self {
@@ -175,7 +180,7 @@ impl<F: PrimeField> Matrix<F> {
     }
 
     /// return `self @ other`
-    pub fn mul_mat(&self, other: &Self) -> Option<Self> {
+    pub fn matmul(&self, other: &Self) -> Option<Self> {
         if self.num_rows() != other.num_columns() {
             return None;
         };
@@ -393,6 +398,7 @@ pub fn kronecker_delta<F: PrimeField>(i: usize, j: usize) -> F {
 mod tests {
     use super::*;
     use ark_ff::Zero;
+
     type Fr = ark_bls12_381::Fr;
 
     struct Foo<const N: usize> {
@@ -531,7 +537,7 @@ mod tests {
 
         let m_inv = m.invert().unwrap();
 
-        let computed_identity = m.mul_mat(&m_inv).unwrap();
+        let computed_identity = m.matmul(&m_inv).unwrap();
         assert!(computed_identity.is_identity());
 
         // S
@@ -564,9 +570,9 @@ mod tests {
 
         let m = Matrix(vec![vec![zero, one], vec![one, zero]]);
         let m_inv = m.invert().unwrap();
-        let computed_identity = m.mul_mat(&m_inv).unwrap();
+        let computed_identity = m.matmul(&m_inv).unwrap();
         assert!(computed_identity.is_identity());
-        let computed_identity = m_inv.mul_mat(&m).unwrap();
+        let computed_identity = m_inv.matmul(&m).unwrap();
         assert!(computed_identity.is_identity());
     }
 
@@ -668,7 +674,7 @@ mod tests {
 
         assert!(res.is_identity());
 
-        let prod = m.mul_mat(&shadow).unwrap();
+        let prod = m.matmul(&shadow).unwrap();
 
         assert!(prod.is_identity());
     }
