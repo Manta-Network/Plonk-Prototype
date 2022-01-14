@@ -1,15 +1,18 @@
 //! Correct, Naive, reference implementation of Poseidon hash function.
 
-use crate::poseidon::field::{COMArith, COMArithExt, NativeField};
 use crate::poseidon::{
     mds::MdsMatrices, round_constant::generate_constants, round_numbers::calc_round_numbers,
     PoseidonError,
 };
+
 use ark_ec::{PairingEngine, TEModelParameters};
 use ark_ff::PrimeField;
-use num_traits::One;
-use plonk_core::prelude::{StandardComposer, Variable};
+use derivative::Derivative;
+use num_traits::{One, Zero};
+use plonk_core::constraint_system::StandardComposer;
+use plonk_core::prelude as plonk;
 use std::convert::TryInto;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,86 +57,136 @@ impl<F: PrimeField> PoseidonConstants<F> {
     }
 }
 
-pub trait PoseidonSpec<COM = ()> {
-    type Field: COMArithExt<COM>;
+pub trait PoseidonSpec<COM, const WIDTH: usize> {
+    /// Field used as state
+    type Field: Debug + Clone;
+    /// Field used as constant paramater
+    type ParameterField: PrimeField; // TODO: for now, only prime field is supported. Can be used for arkplonk and arkworks which uses the same PrimeField. For other field, we are not supporting yet.
+
+    fn full_round(
+        c: &mut COM,
+        constants: &PoseidonConstants<Self::ParameterField>,
+        constants_offset: &mut usize,
+        state: &mut [Self::Field; WIDTH],
+    ) {
+        let pre_round_keys = constants
+            .round_constants
+            .iter()
+            .skip(*constants_offset)
+            .map(Some);
+
+        state.iter_mut().zip(pre_round_keys).for_each(|(l, pre)| {
+            *l = Self::quintic_s_box(c, l.clone(), pre.map(|x| *x), None);
+        });
+
+        *constants_offset += WIDTH;
+
+        Self::product_mds(c, constants, state);
+    }
+
+    fn partial_round(
+        c: &mut COM,
+        constants: &PoseidonConstants<Self::ParameterField>,
+        constants_offset: &mut usize,
+        state: &mut [Self::Field; WIDTH],
+    ) {
+        // TODO: we can combine add_round_constants and s_box using fewer constraints
+        Self::add_round_constants(c, state, constants, constants_offset);
+
+        // apply quintic s-box to the first element
+        state[0] = Self::quintic_s_box(c, state[0].clone(), None, None);
+
+        // Multiply by MDS
+        Self::product_mds(c, constants, state);
+    }
+
+    fn add_round_constants(
+        c: &mut COM,
+        state: &mut [Self::Field; WIDTH],
+        constants: &PoseidonConstants<Self::ParameterField>,
+        constants_offset: &mut usize,
+    ) {
+        for (element, round_constant) in state
+            .iter_mut()
+            .zip(constants.round_constants.iter())
+            .skip(*constants_offset)
+        {
+            // element.com_addi(c, round_constant);
+            *element = Self::addi(c, element, round_constant)
+        }
+
+        *constants_offset += WIDTH;
+    }
+
+    fn product_mds(
+        c: &mut COM,
+        constants: &PoseidonConstants<Self::ParameterField>,
+        state: &mut [Self::Field; WIDTH],
+    ) {
+        let matrix = &constants.mds_matrices.m;
+        let mut result = Self::zeros::<WIDTH>(c);
+        for (j, val) in result.iter_mut().enumerate() {
+            for (i, row) in matrix.iter_rows().enumerate() {
+                // *val += row[j] * state[i];
+                let tmp = Self::muli(c, &state[i], &row[j]);
+                *val = Self::add(c, val, &tmp);
+            }
+        }
+        *state = result;
+    }
+
     /// return (x + pre_add)^5 + post_add
-    // todo: for PLONK, we can have some specialization for s_box
     fn quintic_s_box(
         c: &mut COM,
         x: Self::Field,
-        pre_add: Option<NativeField<Self::Field, COM>>,
-        post_add: Option<NativeField<Self::Field, COM>>,
+        pre_add: Option<Self::ParameterField>,
+        post_add: Option<Self::ParameterField>,
     ) -> Self::Field {
-        let mut tmp = match pre_add {
-            Some(a) => x.com_addi(c, &a),
+        let tmp = match pre_add {
+            Some(a) => Self::addi(c, &x, &a),
             None => x.clone(),
         };
-        tmp = tmp.com_square(c);
-        tmp = tmp.com_square(c);
-        tmp.com_mul_assign(c, &x);
+        Self::power_of_5(c, &tmp);
         match post_add {
-            Some(a) => tmp.com_addi(c, &a),
+            Some(a) => Self::addi(c, &tmp, &a),
             None => tmp,
         }
     }
-}
 
-pub struct PoseidonRefNativeSpec<F: PrimeField> {
-    pub _field: PhantomData<F>,
-}
-
-pub struct PoseidonRefPlonkSpec {}
-
-impl<F: PrimeField> PoseidonSpec for PoseidonRefNativeSpec<F> {
-    type Field = F;
-}
-
-impl<E, P> PoseidonSpec<StandardComposer<E, P>> for PoseidonRefPlonkSpec
-where
-    E: PairingEngine,
-    P: TEModelParameters<BaseField = E::Fr>,
-{
-    type Field = Variable;
-
-    fn quintic_s_box(
-        c: &mut StandardComposer<E, P>,
-        x: Self::Field,
-        pre_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>,
-        post_add: Option<NativeField<Self::Field, StandardComposer<E, P>>>,
-    ) -> Self::Field {
-        // TODO: optimize this for plonk
-        let mut tmp = match pre_add {
-            Some(a) => x.com_addi(c, &a),
-            None => x.clone(),
-        };
-        tmp = tmp.com_square(c);
-        tmp = tmp.com_square(c);
-        match post_add {
-            Some(a) => Variable::com_arith(c).w_l(tmp).w_r(x).mul().q_c(a).build(c),
-            None => Variable::com_arith(c).w_l(tmp).w_r(x).mul().build(c),
-        }
+    fn power_of_5(c: &mut COM, x: &Self::Field) -> Self::Field {
+        let mut tmp = Self::mul(c, x, x); // x^2
+        tmp = Self::mul(c, &tmp, &tmp); // x^4
+        Self::mul(c, &tmp, x) // x^5
     }
+
+    fn alloc(c: &mut COM, v: Self::ParameterField) -> Self::Field;
+    fn zeros<const W: usize>(c: &mut COM) -> [Self::Field; W];
+    fn zero(c: &mut COM) -> Self::Field {
+        Self::zeros::<1>(c)[0].clone()
+    }
+    fn add(c: &mut COM, x: &Self::Field, y: &Self::Field) -> Self::Field;
+    fn addi(c: &mut COM, a: &Self::Field, b: &Self::ParameterField) -> Self::Field;
+    fn mul(c: &mut COM, x: &Self::Field, y: &Self::Field) -> Self::Field;
+    fn muli(c: &mut COM, x: &Self::Field, y: &Self::ParameterField) -> Self::Field;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Poseidon<COM, S: PoseidonSpec<COM>, const WIDTH: usize>
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+pub struct Poseidon<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize>
 where
-    NativeField<S::Field, COM>: PrimeField, // TODO: for now, we only support arkwork's native field. After refactoring PoseidonConstants, we can support other field libraries!
+    S: ?Sized,
 {
     pub(crate) constants_offset: usize,
     pub(crate) current_round: usize,
     pub elements: [S::Field; WIDTH],
     pos: usize,
-    pub(crate) constants: PoseidonConstants<NativeField<S::Field, COM>>,
+    pub(crate) constants: PoseidonConstants<S::ParameterField>,
 }
 
-impl<COM, S: PoseidonSpec<COM>, const WIDTH: usize> Poseidon<COM, S, WIDTH>
-where
-    NativeField<S::Field, COM>: PrimeField,
-{
-    pub fn new(c: &mut COM, constants: PoseidonConstants<NativeField<S::Field, COM>>) -> Self {
-        let mut elements = S::Field::zeros(c);
-        elements[0] = S::Field::com_alloc(c, constants.domain_tag);
+impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDTH> {
+    pub fn new(c: &mut COM, constants: PoseidonConstants<S::ParameterField>) -> Self {
+        let mut elements = S::zeros(c);
+        elements[0] = S::alloc(c, constants.domain_tag);
         Poseidon {
             constants_offset: 0,
             current_round: 0,
@@ -150,10 +203,8 @@ where
     pub fn reset(&mut self, c: &mut COM) {
         self.constants_offset = 0;
         self.current_round = 0;
-        self.elements[1..]
-            .iter_mut()
-            .for_each(|l| *l = S::Field::com_zero(c));
-        self.elements[0] = S::Field::com_alloc(c, self.constants.domain_tag);
+        self.elements[1..].iter_mut().for_each(|l| *l = S::zero(c));
+        self.elements[0] = S::alloc(c, self.constants.domain_tag);
         self.pos = 1;
     }
 
@@ -175,85 +226,120 @@ where
     /// Output the hash
     pub fn output_hash(&mut self, c: &mut COM) -> S::Field {
         for _ in 0..self.constants.half_full_rounds {
-            self.full_round(c);
+            S::full_round(
+                c,
+                &self.constants,
+                &mut self.constants_offset,
+                &mut self.elements,
+            )
         }
 
         for _ in 0..self.constants.partial_rounds {
-            self.partial_round(c);
+            S::partial_round(
+                c,
+                &self.constants,
+                &mut self.constants_offset,
+                &mut self.elements,
+            );
         }
 
         for _ in 0..self.constants.half_full_rounds {
-            self.full_round(c);
+            S::full_round(
+                c,
+                &self.constants,
+                &mut self.constants_offset,
+                &mut self.elements,
+            )
         }
 
         self.elements[1].clone()
     }
+}
 
-    fn full_round(&mut self, c: &mut COM) {
-        let pre_round_keys = self
-            .constants
-            .round_constants
-            .iter()
-            .skip(self.constants_offset)
-            .map(Some);
+pub struct NativeSpec<F: PrimeField> {
+    _field: PhantomData<F>,
+}
 
-        self.elements
-            .iter_mut()
-            .zip(pre_round_keys)
-            .for_each(|(l, pre)| {
-                *l = S::quintic_s_box(c, l.clone(), pre.map(|x| *x), None);
-            });
+impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F> {
+    type Field = F;
+    type ParameterField = F;
 
-        self.constants_offset += self.elements.len();
-
-        self.product_mds(c);
+    fn alloc(_c: &mut (), v: Self::ParameterField) -> Self::Field {
+        v
     }
 
-    fn partial_round(&mut self, c: &mut COM) {
-        self.add_round_constants(c);
-
-        // apply quintic s-box to the first element
-        self.elements[0] = S::quintic_s_box(c, self.elements[0].clone(), None, None);
-
-        // Multiply by MDS
-        self.product_mds(c);
+    fn zeros<const W: usize>(_c: &mut ()) -> [Self::Field; W] {
+        [F::zero(); W]
     }
 
-    fn add_round_constants(&mut self, c: &mut COM) {
-        for (element, round_constant) in self
-            .elements
-            .iter_mut()
-            .zip(self.constants.round_constants.iter())
-            .skip(self.constants_offset)
-        {
-            element.com_addi(c, round_constant);
-        }
-
-        self.constants_offset += self.elements.len();
+    fn add(_c: &mut (), x: &Self::Field, y: &Self::Field) -> Self::Field {
+        *x + *y
     }
 
-    /// Multiply current state by MDS matrix
-    fn product_mds(&mut self, c: &mut COM) {
-        let matrix = &self.constants.mds_matrices.m;
-        let mut result = S::Field::zeros::<WIDTH>(c);
+    fn addi(_c: &mut (), a: &Self::Field, b: &Self::ParameterField) -> Self::Field {
+        *a + *b
+    }
 
-        for (j, val) in result.iter_mut().enumerate() {
-            for (i, row) in matrix.iter_rows().enumerate() {
-                // TODO: shall we move this to spec
-                // *val += row[j] * self.elements[i]
-                let updated_val = S::Field::com_arith(c)
-                    .w_l(self.elements[i].clone())
-                    .q_l(row[j]) // row[j] * self.elements[i]
-                    .w_r(val.clone())
-                    .q_r(S::Field::com_one_native())// *val
-                    .build(c);
-                *val = updated_val;
-            }
-        }
+    fn mul(_c: &mut (), x: &Self::Field, y: &Self::Field) -> Self::Field {
+        *x * *y
+    }
 
-        self.elements = result;
+    fn muli(_c: &mut (), x: &Self::Field, y: &Self::ParameterField) -> Self::Field {
+        *x * *y
     }
 }
+
+pub struct PlonkSpec;
+
+impl<E, P, const WIDTH: usize> PoseidonSpec<plonk::StandardComposer<E, P>, WIDTH> for PlonkSpec
+where
+    E: PairingEngine,
+    P: TEModelParameters<BaseField = E::Fr>,
+{
+    type Field = plonk::Variable;
+    type ParameterField = E::Fr;
+
+    fn alloc(c: &mut StandardComposer<E, P>, v: Self::ParameterField) -> Self::Field {
+        c.add_input(v)
+    }
+
+    fn zeros<const W: usize>(c: &mut StandardComposer<E, P>) -> [Self::Field; W] {
+        [c.zero_var(); W]
+    }
+
+    fn add(c: &mut StandardComposer<E, P>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+        c.arithmetic_gate(|g| g.witness(*x, *y, None).add(E::Fr::one(), E::Fr::one()))
+    }
+
+    fn addi(
+        c: &mut StandardComposer<E, P>,
+        a: &Self::Field,
+        b: &Self::ParameterField,
+    ) -> Self::Field {
+        let zero = c.zero_var();
+        c.arithmetic_gate(|g| {
+            g.witness(*a, zero, None)
+                .add(E::Fr::one(), E::Fr::zero())
+                .constant(*b)
+        })
+    }
+
+    fn mul(c: &mut StandardComposer<E, P>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+        c.arithmetic_gate(|q| {
+            q.witness(*x, *y, None).mul(E::Fr::one())
+        })
+    }
+
+    fn muli(
+        c: &mut StandardComposer<E, P>,
+        x: &Self::Field,
+        y: &Self::ParameterField,
+    ) -> Self::Field {
+        let zero = c.zero_var();
+        c.arithmetic_gate(|g|g.witness(*x, zero, None).add(*y, E::Fr::zero()))
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -266,13 +352,13 @@ mod tests {
     #[test]
     // poseidon should output something if num_inputs = arity
     fn sanity_test() {
-        const ARITY: usize = 4;
+        const ARITY: usize = 5;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
 
         let param = PoseidonConstants::generate::<WIDTH>();
         let mut poseidon =
-            Poseidon::<(), PoseidonRefNativeSpec<Fr>, WIDTH>::new(&mut (), param.clone());
+            Poseidon::<(), NativeSpec<Fr>, WIDTH>::new(&mut (), param.clone());
         let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
 
         inputs.iter().for_each(|x| {
@@ -283,9 +369,9 @@ mod tests {
         let mut c = StandardComposer::<E, P>::new();
         let inputs_var = inputs
             .iter()
-            .map(|x| Variable::com_alloc(&mut c, *x))
+            .map(|x| c.add_input(*x))
             .collect::<Vec<_>>();
-        let mut poseidon_circuit = Poseidon::<_, PoseidonRefPlonkSpec, WIDTH>::new(&mut c, param);
+        let mut poseidon_circuit = Poseidon::<_, PlonkSpec, WIDTH>::new(&mut c, param);
         inputs_var.iter().for_each(|x| {
             let _ = poseidon_circuit.input(*x).unwrap();
         });
@@ -313,7 +399,7 @@ mod tests {
         let mut rng = test_rng();
 
         let param = PoseidonConstants::generate::<WIDTH>();
-        let mut poseidon = Poseidon::<(), PoseidonRefNativeSpec<Fr>, WIDTH>::new(&mut (), param);
+        let mut poseidon = Poseidon::<(), NativeSpec<Fr>, WIDTH>::new(&mut (), param);
         (0..(ARITY + 1)).for_each(|_| {
             let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
         });
