@@ -1,10 +1,11 @@
 pub mod matrix;
 pub mod mds;
+pub mod preprocessing;
 pub mod round_constant;
 pub mod poseidon_ref;
 pub mod round_numbers;
 // pub mod constraints;
-pub mod plonk_backends;
+// pub mod plonk_backends;
 
 use thiserror::Error;
 
