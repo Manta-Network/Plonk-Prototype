@@ -57,7 +57,7 @@ impl<F: PrimeField> PoseidonConstants<F> {
     }
 }
 
-pub trait PoseidonSpec<COM, const WIDTH: usize> {
+pub trait PoseidonRefSpec<COM, const WIDTH: usize> {
     /// Field used as state
     type Field: Debug + Clone;
     /// Field used as constant paramater
@@ -172,7 +172,7 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub struct Poseidon<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize>
+pub struct Poseidon<COM, S: PoseidonRefSpec<COM, WIDTH>, const WIDTH: usize>
 where
     S: ?Sized,
 {
@@ -183,7 +183,7 @@ where
     pub(crate) constants: PoseidonConstants<S::ParameterField>,
 }
 
-impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDTH> {
+impl<COM, S: PoseidonRefSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDTH> {
     pub fn new(c: &mut COM, constants: PoseidonConstants<S::ParameterField>) -> Self {
         let mut elements = S::zeros(c);
         elements[0] = S::alloc(c, constants.domain_tag);
@@ -260,7 +260,7 @@ pub struct NativeSpec<F: PrimeField> {
     _field: PhantomData<F>,
 }
 
-impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F> {
+impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<(), WIDTH> for NativeSpec<F> {
     type Field = F;
     type ParameterField = F;
 
@@ -291,7 +291,7 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F
 
 pub struct PlonkSpec;
 
-impl<E, P, const WIDTH: usize> PoseidonSpec<plonk::StandardComposer<E, P>, WIDTH> for PlonkSpec
+impl<E, P, const WIDTH: usize> PoseidonRefSpec<plonk::StandardComposer<E, P>, WIDTH> for PlonkSpec
 where
     E: PairingEngine,
     P: TEModelParameters<BaseField = E::Fr>,
@@ -339,7 +339,7 @@ where
 }
 
 mod r1cs {
-    use crate::poseidon::poseidon_ref::PoseidonSpec;
+    use crate::poseidon::poseidon_ref::PoseidonRefSpec;
     use ark_ff::PrimeField;
     use ark_r1cs_std::fields::fp::FpVar;
     use ark_r1cs_std::prelude::*;
@@ -350,7 +350,7 @@ mod r1cs {
         _field: F,
     }
 
-    impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<ConstraintSystemRef<F>, WIDTH>
+    impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<ConstraintSystemRef<F>, WIDTH>
         for R1csSpec<F, WIDTH>
     {
         type Field = FpVar<F>;
