@@ -184,7 +184,7 @@ mod tests {
             m,
             m_inv,
             m_hat,
-            m_hat_inv,
+            m_hat_inv: _,
             m_prime,
             m_double_prime,
         } = MdsMatrices::<Fr>::new(width);

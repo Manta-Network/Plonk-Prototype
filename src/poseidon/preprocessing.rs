@@ -7,7 +7,6 @@ use ark_ff::PrimeField;
 
 // - Compress constants by pushing them back through linear layers and through the identity components of partial layers.
 // - As a result, constants need only be added after each S-box.
-#[allow(clippy::ptr_arg)]
 pub(crate) fn compress_round_constants<F: PrimeField>(
     width: usize,
     full_rounds: usize,

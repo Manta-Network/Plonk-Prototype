@@ -401,9 +401,6 @@ mod tests {
 
     type Fr = ark_bls12_381::Fr;
 
-    struct Foo<const N: usize> {
-        data: [i32; N],
-    }
 
     #[test]
     fn test_minor() {
