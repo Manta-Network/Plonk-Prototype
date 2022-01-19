@@ -48,5 +48,7 @@ ark-ed-on-bls12-381 = { version = "^0.3.0", default-features = false, features =
 
 [dev-dependencies]
 rand = "0.8"
+ff = "0.11.0"
+blstrs = "0.4.0"
 
 [features]
