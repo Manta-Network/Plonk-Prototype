@@ -15,36 +15,11 @@ pub fn cast_field(x: Fr) -> ArkFr {
 }
 
 pub fn cast_vector(x: Vec<Fr>) -> Vec<ArkFr> {
-    let length = x.len();
-    let mut Ark_fr_vec = Vec::with_capacity(length);
-    for i in 0..length {
-        let bls_fr = x[i];
-        let ark_fr = cast_field(bls_fr);
-        Ark_fr_vec.push(ark_fr);
-    }
-
-    Ark_fr_vec
+    x.into_iter().map(cast_field).collect()
 }
 
 pub fn cast_matrix(x: Vec<Vec<Fr>>) -> Matrix<ArkFr> {
-    let width = x.len();
-    assert!(width > 0, "Matrix width is 0!");
-
-    let height = x[0].len();
-    assert!(height > 0, "Matrix height is 0!");
-
-    let mut Ark_matrix = Vec::with_capacity(width);
-    for i in 0..width {
-        let mut row = Vec::with_capacity(height);
-        for j in 0..height {
-            let bls_fr = x[i][j];
-            let ark_fr = cast_field(bls_fr);
-            row.push(ark_fr);
-        }
-        Ark_matrix.push(row)
-    }
-
-    Matrix(Ark_matrix)
+    x.into_iter().map(cast_vector).collect()
 }
 
 #[test]

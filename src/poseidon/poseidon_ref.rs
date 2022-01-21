@@ -355,6 +355,7 @@ mod tests {
     type Fr = <E as PairingEngine>::Fr;
     use crate::poseidon::poseidon_ref::r1cs::R1csSpec;
     use ark_std::{test_rng, UniformRand};
+    use ff::Field;
 
     #[test]
     // poseidon should output something if num_inputs = arity
@@ -445,5 +446,56 @@ mod tests {
             let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
         });
         let _ = poseidon.output_hash(&mut ());
+    }
+
+    use neptune::poseidon::{
+         HashMode, Poseidon as NeptunePoseidon, PoseidonConstants as NeptunePoseidonConstants,
+    };
+    use neptune::Strength;
+    use crate::tests::conversion::cast_field;
+    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
+    // let constants = NeptunePoseidonConstants::<Fr, A>::new_with_strength(strength);
+// let mut p = NeptunePoseidon::<Fr, A>::new(&constants);
+// let mut p2 = NeptunePoseidon::<Fr, A>::new(&constants);
+// let mut p3 = NeptunePoseidon::<Fr, A>::new(&constants);
+// let mut p4 = NeptunePoseidon::<Fr, A>::new(&constants);
+
+//     let test_arity = constants.arity();
+//     for n in 0..test_arity {
+//         let scalar = Fr::from(n as u64);
+//         p.input(scalar).unwrap();
+//         p2.input(scalar).unwrap();
+//         p3.input(scalar).unwrap();
+//         p4.input(scalar).unwrap();
+//     }
+
+    //     let digest = p.hash();
+//     let digest2 = p2.hash_in_mode(Correct);
+//     let digest3 = p3.hash_in_mode(OptimizedStatic);
+//     let digest4 = p4.hash_in_mode(OptimizedDynamic);
+
+    #[test]
+    fn compare_with_neptune() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        type NepArity = generic_array::typenum::U4;
+
+        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
+
+        let mut rng = test_rng();
+        let inputs_ff = (0..ARITY).map(|_| blstrs::Scalar::random(&mut rng)).collect::<Vec<_>>();
+        let inputs = inputs_ff.iter().map(|&x|cast_field(x)).collect::<Vec<_>>();
+
+        let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
+        let mut ark_poseidon = PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), ark_consts);
+
+        inputs_ff.iter().for_each(|x|{neptune_poseidon.input(*x).unwrap();});
+        inputs.iter().for_each(|x| {ark_poseidon.input(*x).unwrap();});
+
+        let digest_expected = cast_field(neptune_poseidon.hash_in_mode(HashMode::Correct));
+        let digest_actual = ark_poseidon.output_hash(&mut ());
+
+        assert_eq!(digest_expected, digest_actual);
+
     }
 }
