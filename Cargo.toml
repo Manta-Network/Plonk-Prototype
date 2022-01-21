@@ -45,13 +45,12 @@ ark-bn254 = { version = "^0.3.0", default-features = false, features = ["curve"]
 ark-bls12-381 = { version = "^0.3.0", default-features = false, features = ["curve"] }
 ark-ed-on-bls12-381 = { version = "^0.3.0", default-features = false, features = ["r1cs"] }
 
-# Test with neptune
-neptune = {git = "https://github.com/filecoin-project/neptune"}
-generic-array = "0.14.4"
 
 [dev-dependencies]
 rand = "0.8"
 ff = "0.11.0"
 blstrs = "0.4.0"
+generic-array = "0.14.4"
+neptune = { git = "https://github.com/filecoin-project/neptune" }
 
 [features]
