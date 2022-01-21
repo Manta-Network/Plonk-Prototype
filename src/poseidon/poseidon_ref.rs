@@ -257,9 +257,9 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<(), WIDTH> for NativeSpe
     }
 }
 
-pub struct PlonkSpec;
+pub struct PlonkSpecRef;
 
-impl<F, P, const WIDTH: usize> PoseidonRefSpec<plonk::StandardComposer<F, P>, WIDTH> for PlonkSpec
+impl<F, P, const WIDTH: usize> PoseidonRefSpec<plonk::StandardComposer<F, P>, WIDTH> for PlonkSpecRef
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
@@ -314,12 +314,12 @@ mod r1cs {
     use ark_relations::r1cs::ConstraintSystemRef;
     use std::convert::TryInto;
 
-    pub struct R1csSpec<F: PrimeField, const WIDTH: usize> {
+    pub struct R1csSpecRef<F: PrimeField, const WIDTH: usize> {
         _field: F,
     }
 
     impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<ConstraintSystemRef<F>, WIDTH>
-        for R1csSpec<F, WIDTH>
+        for R1csSpecRef<F, WIDTH>
     {
         type Field = FpVar<F>;
         type ParameterField = F;
@@ -367,7 +367,7 @@ mod tests {
     type E = ark_bls12_381::Bls12_381;
     type P = ark_ed_on_bls12_381::EdwardsParameters;
     type Fr = <E as PairingEngine>::Fr;
-    use crate::poseidon::poseidon_ref::r1cs::R1csSpec;
+    use crate::poseidon::poseidon_ref::r1cs::R1csSpecRef;
     use ark_std::{test_rng, UniformRand};
     use ff::Field;
 
@@ -389,7 +389,7 @@ mod tests {
 
         let mut c = StandardComposer::<Fr, P>::new();
         let inputs_var = inputs.iter().map(|x| c.add_input(*x)).collect::<Vec<_>>();
-        let mut poseidon_circuit = PoseidonRef::<_, PlonkSpec, WIDTH>::new(&mut c, param);
+        let mut poseidon_circuit = PoseidonRef::<_, PlonkSpecRef, WIDTH>::new(&mut c, param);
         inputs_var.iter().for_each(|x| {
             let _ = poseidon_circuit.input(*x).unwrap();
         });
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     // poseidon should output something if num_inputs = arity
     fn sanity_test_r1cs() {
-        const ARITY: usize = 4;
+        const ARITY: usize = 2;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
 
@@ -426,10 +426,10 @@ mod tests {
 
         let mut cs = ConstraintSystem::new_ref();
         let mut poseidon_var =
-            PoseidonRef::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, param.clone());
+            PoseidonRef::<_, R1csSpecRef<Fr, WIDTH>, WIDTH>::new(&mut cs, param.clone());
         let inputs_var = inputs
             .iter()
-            .map(|x| R1csSpec::<_, WIDTH>::alloc(&mut cs, *x))
+            .map(|x| R1csSpecRef::<_, WIDTH>::alloc(&mut cs, *x))
             .collect::<Vec<_>>();
         inputs_var.iter().for_each(|x| {
             let _ = poseidon_var.input(x.clone()).unwrap();

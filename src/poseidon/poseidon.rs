@@ -8,6 +8,9 @@ use ark_ff::PrimeField;
 use derivative::Derivative;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use plonk_core::prelude as plonk;
+use plonk_core::constraint_system::StandardComposer;
+use ark_ec::TEModelParameters;
 
 // TODO: reduce duplicate code with `poseidon_ref`
 pub trait PoseidonSpec<COM, const WIDTH: usize> {
@@ -321,11 +324,11 @@ impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDT
     }
 }
 
-pub struct NativePoseidonSpec<F: PrimeField, const WIDTH: usize> {
+pub struct NativeSpec<F: PrimeField, const WIDTH: usize> {
     _field: PhantomData<F>,
 }
 
-impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativePoseidonSpec<F, WIDTH> {
+impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F, WIDTH> {
     type Field = F;
     type ParameterField = F;
 
@@ -354,18 +357,128 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativePoseid
     }
 }
 
+
+pub struct PlonkSpec;
+
+impl<F, P, const WIDTH: usize> PoseidonSpec<plonk::StandardComposer<F, P>, WIDTH> for PlonkSpec
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+{
+    type Field = plonk::Variable;
+    type ParameterField = F;
+
+    fn alloc(c: &mut StandardComposer<F, P>, v: Self::ParameterField) -> Self::Field {
+        c.add_input(v)
+    }
+
+    fn zeros<const W: usize>(c: &mut StandardComposer<F, P>) -> [Self::Field; W] {
+        [c.zero_var(); W]
+    }
+
+    fn add(c: &mut StandardComposer<F, P>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+        c.arithmetic_gate(|g| g.witness(*x, *y, None).add(F::one(), F::one()))
+    }
+
+    fn addi(
+        c: &mut StandardComposer<F, P>,
+        a: &Self::Field,
+        b: &Self::ParameterField,
+    ) -> Self::Field {
+        let zero = c.zero_var();
+        c.arithmetic_gate(|g| {
+            g.witness(*a, zero, None)
+                .add(F::one(), F::zero())
+                .constant(*b)
+        })
+    }
+
+    fn mul(c: &mut StandardComposer<F, P>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+        c.arithmetic_gate(|q| q.witness(*x, *y, None).mul(F::one()))
+    }
+
+    fn muli(
+        c: &mut StandardComposer<F, P>,
+        x: &Self::Field,
+        y: &Self::ParameterField,
+    ) -> Self::Field {
+        let zero = c.zero_var();
+        c.arithmetic_gate(|g| g.witness(*x, zero, None).add(*y, F::zero()))
+    }
+}
+
+mod r1cs {
+    use crate::poseidon::poseidon::PoseidonSpec;
+    use ark_ff::PrimeField;
+    use ark_r1cs_std::fields::fp::FpVar;
+    use ark_r1cs_std::prelude::*;
+    use ark_relations::r1cs::ConstraintSystemRef;
+    use std::convert::TryInto;
+
+    pub struct R1csSpec<F: PrimeField, const WIDTH: usize> {
+        _field: F,
+    }
+
+    impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<ConstraintSystemRef<F>, WIDTH>
+        for R1csSpec<F, WIDTH>
+    {
+        type Field = FpVar<F>;
+        type ParameterField = F;
+
+        fn alloc(c: &mut ConstraintSystemRef<F>, v: Self::ParameterField) -> Self::Field {
+            FpVar::new_witness(c.clone(), || Ok(v)).unwrap()
+        }
+
+        fn zeros<const W: usize>(_c: &mut ConstraintSystemRef<F>) -> [Self::Field; W] {
+            vec![FpVar::zero(); W].try_into().unwrap()
+        }
+
+        fn add(_c: &mut ConstraintSystemRef<F>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+            x + y
+        }
+
+        fn addi(
+            _c: &mut ConstraintSystemRef<F>,
+            a: &Self::Field,
+            b: &Self::ParameterField,
+        ) -> Self::Field {
+            a + FpVar::Constant(*b)
+        }
+
+        fn mul(_c: &mut ConstraintSystemRef<F>, x: &Self::Field, y: &Self::Field) -> Self::Field {
+            x * y
+        }
+
+        fn muli(
+            _c: &mut ConstraintSystemRef<F>,
+            x: &Self::Field,
+            y: &Self::ParameterField,
+        ) -> Self::Field {
+            x * FpVar::Constant(*y)
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use ark_r1cs_std::R1CSVar;
+    use ark_relations::r1cs::ConstraintSystem;
+    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
+    use neptune::Strength;
+    use ff::Field;
     use ark_ec::PairingEngine;
     use ark_std::{test_rng, UniformRand};
     use crate::poseidon::constants::PoseidonConstants;
-    use crate::poseidon::poseidon::{NativePoseidonSpec, Poseidon};
     use crate::poseidon::poseidon_ref::{NativeSpecRef, PoseidonRef};
+    use crate::poseidon::poseidon::r1cs::R1csSpec;
+    use crate::tests::conversion::cast_field;
+    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
 
     type E = ark_bls12_381::Bls12_381;
     type P = ark_ed_on_bls12_381::EdwardsParameters;
     type Fr = <E as PairingEngine>::Fr;
-
 
     #[test]
     fn compare_with_poseidon_ref(){
@@ -382,7 +495,7 @@ mod tests {
         });
         let hash_expected: Fr = poseidon.output_hash(&mut ());
 
-        let mut poseidon_optimized = Poseidon::<(), NativePoseidonSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
+        let mut poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
         inputs.iter().for_each(|x| {
             let _ = poseidon_optimized.input(*x).unwrap();
         });
@@ -390,12 +503,6 @@ mod tests {
 
         assert_eq!(hash_expected, hash_actual);
     }
-
-    use crate::tests::conversion::cast_field;
-    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
-    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
-    use neptune::Strength;
-    use ff::Field;
 
     #[test]
     fn compare_with_neptune_optimized() {
@@ -412,7 +519,7 @@ mod tests {
         let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
 
         let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-        let mut ark_poseidon_optimized = Poseidon::<(), NativePoseidonSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
+        let mut ark_poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
 
         inputs_ff.iter().for_each(|x| {
             neptune_poseidon.input(*x).unwrap();
@@ -426,5 +533,134 @@ mod tests {
 
         assert_eq!(digest_expected, digest_actual);
     }
+
+    #[test]
+    fn reset() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        let mut rng = test_rng();
+
+        let param = PoseidonConstants::generate::<WIDTH>();
+        let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+
+        let mut poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        inputs.iter().for_each(|x| {
+            let _ = poseidon_optimized.input(*x).unwrap();
+        });
+        let hash_actual = poseidon_optimized.output_hash(&mut ());
+        poseidon_optimized.reset(& mut());
+
+        let default = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
+        assert_eq!(default.pos, poseidon_optimized.pos);
+        assert_eq!(default.elements, poseidon_optimized.elements);
+        assert_eq!(default.constants_offset, poseidon_optimized.constants_offset);
+    }
+
+    // #[test]
+    // fn hash_det() {
+    //     const ARITY: usize = 4;
+    //     const WIDTH: usize = ARITY + 1;
+    //     let mut rng = test_rng();
+    //     let param = PoseidonConstants::generate::<WIDTH>();
+    //     let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+    //     let mut poseidon_optimized = Poseidon::<(), NativePoseidonSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+    //     inputs.iter().for_each(|x| {
+    //         let _ = poseidon_optimized.input(*x).unwrap();
+    //     });
+    //     let mut poseidon_optimized2 = poseidon_optimized.clone();
+    //     assert_eq!(poseidon_optimized.output_hash(&mut ()), poseidon_optimized2.output_hash(&mut ()));
+    // }
+
+    #[test]
+    // poseidon should output something if num_inputs = arity
+    fn sanity_test() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        let mut rng = test_rng();
+
+        let param = PoseidonConstants::generate::<WIDTH>();
+        let mut poseidon_native = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+
+        inputs.iter().for_each(|x| {
+            let _ = poseidon_native.input(*x).unwrap();
+        });
+        let native_hash: Fr = poseidon_native.output_hash(&mut ());
+
+        let mut c = StandardComposer::<Fr, P>::new();
+        let inputs_var = inputs.iter().map(|x| c.add_input(*x)).collect::<Vec<_>>();
+        let mut poseidon_circuit = Poseidon::<_, PlonkSpec, WIDTH>::new(&mut c, param);
+        inputs_var.iter().for_each(|x| {
+            let _ = poseidon_circuit.input(*x).unwrap();
+        });
+        let plonk_hash = poseidon_circuit.output_hash(&mut c);
+
+        c.check_circuit_satisfied();
+
+        let expected = c.add_input(native_hash);
+        c.assert_equal(expected, plonk_hash);
+
+        c.check_circuit_satisfied();
+        println!(
+            "circuit size for WIDTH {} poseidon: {}",
+            WIDTH,
+            c.circuit_size()
+        )
+    }
+
+    #[test]
+    // poseidon should output something if num_inputs = arity
+    fn sanity_test_r1cs() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        let mut rng = test_rng();
+
+        let param = PoseidonConstants::generate::<WIDTH>();
+        let mut poseidon_native = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+
+        inputs.iter().for_each(|x| {
+            let _ = poseidon_native.input(*x).unwrap();
+        });
+        let native_hash: Fr = poseidon_native.output_hash(&mut ());
+
+        let mut cs = ConstraintSystem::new_ref();
+        let mut poseidon_var =
+            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, param.clone());
+        let inputs_var = inputs
+            .iter()
+            .map(|x| R1csSpec::<_, WIDTH>::alloc(&mut cs, *x))
+            .collect::<Vec<_>>();
+        inputs_var.iter().for_each(|x| {
+            let _ = poseidon_var.input(x.clone()).unwrap();
+        });
+
+        let hash_var = poseidon_var.output_hash(&mut cs);
+
+        assert!(cs.is_satisfied().unwrap());
+        assert_eq!(hash_var.value().unwrap(), native_hash);
+        println!(
+            "circuit size for WIDTH {} r1cs: {}",
+            WIDTH,
+            cs.num_constraints()
+        )
+    }
+
+    #[test]
+    #[should_panic]
+    // poseidon should output something if num_inputs > arity
+    fn sanity_test_failure() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        let mut rng = test_rng();
+
+        let param = PoseidonConstants::generate::<WIDTH>();
+        let mut poseidon = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
+        (0..(ARITY + 1)).for_each(|_| {
+            let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
+        });
+        let _ = poseidon.output_hash(&mut ());
+    }
+
 
 }
