@@ -49,7 +49,7 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
             } else {
                 Some(post.clone())
             };
-            Self::quintic_s_box(c, l.clone(), None, post_key);
+            *l = Self::quintic_s_box(c, l.clone(), None, post_key);
         });
 
         if last_round {
@@ -176,11 +176,11 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         pre_add: Option<Self::ParameterField>,
         post_add: Option<Self::ParameterField>,
     ) -> Self::Field {
-        let tmp = match pre_add {
+        let mut tmp = match pre_add {
             Some(a) => Self::addi(c, &x, &a),
             None => x.clone(),
         };
-        Self::power_of_5(c, &tmp);
+        tmp = Self::power_of_5(c, &tmp);
         match post_add {
             Some(a) => Self::addi(c, &tmp, &a),
             None => tmp,
@@ -390,4 +390,41 @@ mod tests {
 
         assert_eq!(hash_expected, hash_actual);
     }
+
+    use crate::tests::conversion::cast_field;
+    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
+    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
+    use neptune::Strength;
+    use ff::Field;
+
+    #[test]
+    fn compare_with_neptune_optimized() {
+        const ARITY: usize = 2;
+        const WIDTH: usize = ARITY + 1;
+        type NepArity = generic_array::typenum::U2;
+
+        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
+
+        let mut rng = test_rng();
+        let inputs_ff = (0..ARITY)
+            .map(|_| blstrs::Scalar::random(&mut rng))
+            .collect::<Vec<_>>();
+        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
+
+        let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
+        let mut ark_poseidon_optimized = Poseidon::<(), NativePoseidonSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
+
+        inputs_ff.iter().for_each(|x| {
+            neptune_poseidon.input(*x).unwrap();
+        });
+        inputs.iter().for_each(|x| {
+            ark_poseidon_optimized.input(*x).unwrap();
+        });
+
+        let digest_expected = cast_field(neptune_poseidon.hash_in_mode(HashMode::OptimizedStatic));
+        let digest_actual = ark_poseidon_optimized.output_hash(&mut ());
+
+        assert_eq!(digest_expected, digest_actual);
+    }
+
 }
