@@ -19,7 +19,7 @@ impl<F: PrimeField> MdsMatrices<F> {
         Self::derive_mds_matrices(m)
     }
 
-    fn derive_mds_matrices(m: Matrix<F>) -> Self {
+    pub fn derive_mds_matrices(m: Matrix<F>) -> Self {
         let m_inv = m.invert().expect("Derived MDS matrix is not invertible");
         let m_hat = m.minor(0, 0);
         let m_hat_inv = m_hat.invert().expect("Derived MDS matrix is not correct");
