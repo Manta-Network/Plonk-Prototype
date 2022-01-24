@@ -17,6 +17,73 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
     type Field: Debug + Clone;
     type ParameterField: PrimeField;
 
+    fn output_hash(
+        c: &mut COM,
+        constants_offset: &mut usize,
+        current_round: &mut usize,
+        elements: &mut [Self::Field; WIDTH],
+        pos: &mut usize,
+        constants: &PoseidonConstants<Self::ParameterField>
+    ) -> Self::Field {
+        Self::add_round_constants(
+            c,
+            elements,
+            constants,
+            constants_offset,
+        );
+
+        for _ in 0..constants.half_full_rounds {
+            Self::full_round(
+                c,
+                constants,
+                current_round,
+                constants_offset,
+                false,
+                elements,
+            )
+        }
+
+        for _ in 0..constants.partial_rounds {
+            Self::partial_round(
+                c,
+                constants,
+                current_round,
+                constants_offset,
+                elements,
+            );
+        }
+
+        // All but last full round
+        for _ in 1..constants.half_full_rounds {
+            Self::full_round(
+                c,
+                constants,
+                current_round,
+                constants_offset,
+                false,
+                elements,
+            );
+        }
+        Self::full_round(
+            c,
+            constants,
+            current_round,
+            constants_offset,
+            true,
+            elements,
+        );
+
+        assert_eq!(
+            *constants_offset,
+            constants.compressed_round_constants.len(),
+            "Constants consumed ({}) must equal preprocessed constants provided ({}).",
+            constants_offset,
+            constants.compressed_round_constants.len()
+        );
+
+        elements[1].clone()
+    }
+
     fn full_round(
         c: &mut COM,
         constants: &PoseidonConstants<Self::ParameterField>,
@@ -264,63 +331,7 @@ impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDT
     }
 
     pub fn output_hash(&mut self, c: &mut COM) -> S::Field {
-        S::add_round_constants(
-            c,
-            &mut self.elements,
-            &self.constants,
-            &mut self.constants_offset,
-        );
-
-        for _ in 0..self.constants.half_full_rounds {
-            S::full_round(
-                c,
-                &self.constants,
-                &mut self.current_round,
-                &mut self.constants_offset,
-                false,
-                &mut self.elements,
-            )
-        }
-
-        for _ in 0..self.constants.partial_rounds {
-            S::partial_round(
-                c,
-                &self.constants,
-                &mut self.current_round,
-                &mut self.constants_offset,
-                &mut self.elements,
-            );
-        }
-
-        // All but last full round
-        for _ in 1..self.constants.half_full_rounds {
-            S::full_round(
-                c,
-                &self.constants,
-                &mut self.current_round,
-                &mut self.constants_offset,
-                false,
-                &mut self.elements,
-            );
-        }
-        S::full_round(
-            c,
-            &self.constants,
-            &mut self.current_round,
-            &mut self.constants_offset,
-            true,
-            &mut self.elements,
-        );
-
-        assert_eq!(
-            self.constants_offset,
-            self.constants.compressed_round_constants.len(),
-            "Constants consumed ({}) must equal preprocessed constants provided ({}).",
-            self.constants_offset,
-            self.constants.compressed_round_constants.len()
-        );
-
-        self.elements[1].clone()
+        S::output_hash(c, &mut self.constants_offset, &mut self.current_round, &mut self.elements, &mut self.pos, &self.constants)
     }
 }
 
@@ -573,7 +584,7 @@ mod tests {
 
     #[test]
     // poseidon should output something if num_inputs = arity
-    fn sanity_test() {
+    fn check_plonk_spec_with_native() {
         const ARITY: usize = 4;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
