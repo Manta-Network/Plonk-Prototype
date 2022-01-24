@@ -36,6 +36,10 @@ impl<T: Clone> Matrix<T> {
         self.0.iter()
     }
 
+    pub fn column(&self, column: usize) -> impl Iterator<Item = &'_ T> {
+        self.0.iter().map(move |row| &row[column])
+    }
+
     pub fn is_square(&self) -> bool {
         self.num_rows() == self.num_columns()
     }
@@ -102,7 +106,7 @@ impl<F: PrimeField> Matrix<F> {
 
     /// check if `self` is square and `self[1..][1..]` is identity
     pub fn is_sparse(&self) -> bool {
-        self.is_square() && self.minor(0,0).is_identity()
+        self.is_square() && self.minor(0, 0).is_identity()
     }
 
     pub fn mul_by_scalar(&self, scalar: F) -> Self {
@@ -400,7 +404,6 @@ mod tests {
     use ark_ff::Zero;
 
     type Fr = ark_bls12_381::Fr;
-
 
     #[test]
     fn test_minor() {

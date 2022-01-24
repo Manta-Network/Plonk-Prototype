@@ -4,13 +4,13 @@ use crate::poseidon::constants::PoseidonConstants;
 use crate::poseidon::matrix::Matrix;
 use crate::poseidon::mds::SparseMatrix;
 use crate::poseidon::PoseidonError;
+use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use derivative::Derivative;
+use plonk_core::constraint_system::StandardComposer;
+use plonk_core::prelude as plonk;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use plonk_core::prelude as plonk;
-use plonk_core::constraint_system::StandardComposer;
-use ark_ec::TEModelParameters;
 
 // TODO: reduce duplicate code with `poseidon_ref`
 pub trait PoseidonSpec<COM, const WIDTH: usize> {
@@ -22,15 +22,9 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         constants_offset: &mut usize,
         current_round: &mut usize,
         elements: &mut [Self::Field; WIDTH],
-        pos: &mut usize,
-        constants: &PoseidonConstants<Self::ParameterField>
+        constants: &PoseidonConstants<Self::ParameterField>,
     ) -> Self::Field {
-        Self::add_round_constants(
-            c,
-            elements,
-            constants,
-            constants_offset,
-        );
+        Self::add_round_constants(c, elements, constants, constants_offset);
 
         for _ in 0..constants.half_full_rounds {
             Self::full_round(
@@ -44,13 +38,7 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         }
 
         for _ in 0..constants.partial_rounds {
-            Self::partial_round(
-                c,
-                constants,
-                current_round,
-                constants_offset,
-                elements,
-            );
+            Self::partial_round(c, constants, current_round, constants_offset, elements);
         }
 
         // All but last full round
@@ -198,19 +186,42 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         Self::product_mds_with_matrix(c, state, &constants.mds_matrices.m)
     }
 
+    fn linear_combination(
+        c: &mut COM,
+        state: &[Self::Field; WIDTH],
+        mat: &Matrix<Self::ParameterField>,
+        mat_col: usize,
+    ) -> Self::Field {
+        state
+            .iter()
+            .zip(mat.column(mat_col))
+            .fold(Self::zero(c), |acc, (x, y)| {
+                let tmp = Self::muli(c, x, y);
+                Self::add(c, &tmp, &acc)
+            })
+    }
+
+    /// compute state @ Mat where `state` is a row vector
     fn product_mds_with_matrix(
         c: &mut COM,
         state: &mut [Self::Field; WIDTH],
         matrix: &Matrix<Self::ParameterField>,
     ) {
         let mut result = Self::zeros::<WIDTH>(c);
-        for (j, val) in result.iter_mut().enumerate() {
-            for (i, row) in matrix.iter_rows().enumerate() {
-                // *val += row[j] * state[i];
-                let tmp = Self::muli(c, &state[i], &row[j]);
-                *val = Self::add(c, val, &tmp);
-            }
+        for (col_index, val) in result.iter_mut().enumerate() {
+            // for (i, row) in matrix.iter_rows().enumerate() {
+            //     // *val += row[j] * state[i];
+            //     let tmp = Self::muli(c, &state[i], &row[j]);
+            //     *val = Self::add(c, val, &tmp);
+            // }
+            *val = Self::linear_combination(
+                c,
+                state,
+                matrix,
+                col_index,
+            );
         }
+
         *state = result;
     }
 
@@ -277,8 +288,8 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
 pub struct Poseidon<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize>
-    where
-        S: ?Sized,
+where
+    S: ?Sized,
 {
     pub(crate) constants_offset: usize,
     pub(crate) current_round: usize,
@@ -288,8 +299,8 @@ pub struct Poseidon<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize>
 }
 
 impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDTH>
-    where
-        S: ?Sized,
+where
+    S: ?Sized,
 {
     pub fn new(c: &mut COM, constants: PoseidonConstants<S::ParameterField>) -> Self {
         let mut elements = S::zeros(c);
@@ -331,7 +342,13 @@ impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> Poseidon<COM, S, WIDT
     }
 
     pub fn output_hash(&mut self, c: &mut COM) -> S::Field {
-        S::output_hash(c, &mut self.constants_offset, &mut self.current_round, &mut self.elements, &mut self.pos, &self.constants)
+        S::output_hash(
+            c,
+            &mut self.constants_offset,
+            &mut self.current_round,
+            &mut self.elements,
+            &self.constants,
+        )
     }
 }
 
@@ -367,7 +384,6 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F
         *x * *y
     }
 }
-
 
 pub struct PlonkSpec;
 
@@ -470,29 +486,28 @@ mod r1cs {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_r1cs_std::R1CSVar;
-    use ark_relations::r1cs::ConstraintSystem;
-    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
-    use neptune::Strength;
-    use ff::Field;
-    use ark_ec::PairingEngine;
-    use ark_std::{test_rng, UniformRand};
     use crate::poseidon::constants::PoseidonConstants;
-    use crate::poseidon::poseidon_ref::{NativeSpecRef, PoseidonRef};
     use crate::poseidon::poseidon::r1cs::R1csSpec;
+    use crate::poseidon::poseidon_ref::{NativeSpecRef, PoseidonRef};
     use crate::tests::conversion::cast_field;
     use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
+    use ark_ec::PairingEngine;
+    use ark_r1cs_std::R1CSVar;
+    use ark_relations::r1cs::ConstraintSystem;
+    use ark_std::{test_rng, UniformRand};
+    use ff::Field;
+    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
+    use neptune::Strength;
 
     type E = ark_bls12_381::Bls12_381;
     type P = ark_ed_on_bls12_381::EdwardsParameters;
     type Fr = <E as PairingEngine>::Fr;
 
     #[test]
-    fn compare_with_poseidon_ref(){
+    fn compare_with_poseidon_ref() {
         const ARITY: usize = 4;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
@@ -506,7 +521,8 @@ mod tests {
         });
         let hash_expected: Fr = poseidon.output_hash(&mut ());
 
-        let mut poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
+        let mut poseidon_optimized =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
         inputs.iter().for_each(|x| {
             let _ = poseidon_optimized.input(*x).unwrap();
         });
@@ -530,7 +546,8 @@ mod tests {
         let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
 
         let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-        let mut ark_poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
+        let mut ark_poseidon_optimized =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
 
         inputs_ff.iter().for_each(|x| {
             neptune_poseidon.input(*x).unwrap();
@@ -554,17 +571,21 @@ mod tests {
         let param = PoseidonConstants::generate::<WIDTH>();
         let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
 
-        let mut poseidon_optimized = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        let mut poseidon_optimized =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
         inputs.iter().for_each(|x| {
             let _ = poseidon_optimized.input(*x).unwrap();
         });
         let hash_actual = poseidon_optimized.output_hash(&mut ());
-        poseidon_optimized.reset(& mut());
+        poseidon_optimized.reset(&mut ());
 
         let default = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);
         assert_eq!(default.pos, poseidon_optimized.pos);
         assert_eq!(default.elements, poseidon_optimized.elements);
-        assert_eq!(default.constants_offset, poseidon_optimized.constants_offset);
+        assert_eq!(
+            default.constants_offset,
+            poseidon_optimized.constants_offset
+        );
     }
 
     // #[test]
@@ -590,7 +611,8 @@ mod tests {
         let mut rng = test_rng();
 
         let param = PoseidonConstants::generate::<WIDTH>();
-        let mut poseidon_native = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        let mut poseidon_native =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
         let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
 
         inputs.iter().for_each(|x| {
@@ -627,7 +649,8 @@ mod tests {
         let mut rng = test_rng();
 
         let param = PoseidonConstants::generate::<WIDTH>();
-        let mut poseidon_native = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
+        let mut poseidon_native =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
         let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
 
         inputs.iter().for_each(|x| {
@@ -672,6 +695,4 @@ mod tests {
         });
         let _ = poseidon.output_hash(&mut ());
     }
-
-
 }
