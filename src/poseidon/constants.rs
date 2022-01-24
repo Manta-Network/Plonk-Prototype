@@ -25,6 +25,7 @@ impl<F: PrimeField> PoseidonConstants<F> {
         let arity = WIDTH - 1;
         let mds_matrices = MdsMatrices::new(WIDTH);
         let (num_full_rounds, num_partial_rounds) = calc_round_numbers(WIDTH, true);
+
         debug_assert_eq!(num_full_rounds % 2, 0);
         let num_half_full_rounds = num_full_rounds / 2;
         let round_constants = generate_constants(
