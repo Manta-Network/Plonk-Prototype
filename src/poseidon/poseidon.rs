@@ -189,14 +189,13 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
     fn linear_combination(
         c: &mut COM,
         state: &[Self::Field; WIDTH],
-        mat: &Matrix<Self::ParameterField>,
-        mat_col: usize,
+        coeff: impl IntoIterator<Item = Self::ParameterField>,
     ) -> Self::Field {
         state
             .iter()
-            .zip(mat.column(mat_col))
+            .zip(coeff)
             .fold(Self::zero(c), |acc, (x, y)| {
-                let tmp = Self::muli(c, x, y);
+                let tmp = Self::muli(c, x, &y);
                 Self::add(c, &tmp, &acc)
             })
     }
@@ -214,12 +213,7 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
             //     let tmp = Self::muli(c, &state[i], &row[j]);
             //     *val = Self::add(c, val, &tmp);
             // }
-            *val = Self::linear_combination(
-                c,
-                state,
-                matrix,
-                col_index,
-            );
+            *val = Self::linear_combination(c, state, matrix.column(col_index).cloned());
         }
 
         *state = result;
@@ -233,22 +227,26 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         let mut result = Self::zeros::<WIDTH>(c);
 
         // First column is dense.
-        for (i, val) in matrix.w_hat.iter().enumerate() {
-            // result[0] += w_hat[i] * state[i];
-            let tmp = Self::muli(c, &state[i], &val);
-            result[0] = Self::add(c, &result[0], &tmp);
-        }
+        // for (i, val) in matrix.w_hat.iter().enumerate() {
+        //     // result[0] += w_hat[i] * state[i];
+        //     let tmp = Self::muli(c, &state[i], &val);
+        //     result[0] = Self::add(c, &result[0], &tmp);
+        // }
+        result[0] = Self::linear_combination(c, state, matrix.w_hat.iter().cloned());
 
         for (j, val) in result.iter_mut().enumerate().skip(1) {
+            // for each j, result[j] = state[j] + state[0] * v_rest[j-1]
+
             // Except for first row/column, diagonals are one.
             *val = Self::add(c, val, &state[j]);
-
-            // First row is dense.
+            //
+            // // First row is dense.
             let tmp = Self::muli(c, &state[0], &matrix.v_rest[j - 1]);
             *val = Self::add(c, val, &tmp);
         }
         *state = result;
     }
+
 
     /// return (x + pre_add)^5 + post_add
     fn quintic_s_box(
@@ -385,9 +383,10 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonSpec<(), WIDTH> for NativeSpec<F
     }
 }
 
-pub struct PlonkSpec;
+pub struct PlonkSpec<const WIDTH: usize>;
 
-impl<F, P, const WIDTH: usize> PoseidonSpec<plonk::StandardComposer<F, P>, WIDTH> for PlonkSpec
+impl<F, P, const WIDTH: usize> PoseidonSpec<plonk::StandardComposer<F, P>, WIDTH>
+    for PlonkSpec<WIDTH>
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
@@ -432,6 +431,66 @@ where
         let zero = c.zero_var();
         c.arithmetic_gate(|g| g.witness(*x, zero, None).add(*y, F::zero()))
     }
+
+
+
+    #[cfg(not(feature = "no-optimize"))]
+    fn quintic_s_box(
+        c: &mut StandardComposer<F, P>,
+        x: Self::Field,
+        pre_add: Option<Self::ParameterField>,
+        post_add: Option<Self::ParameterField>,
+    ) -> Self::Field {
+        match (pre_add, post_add) {
+            (None, None) => Self::power_of_5(c, &x),
+            (Some(_), None) => {
+                unreachable!("currently no one is using this")
+            }
+            (None, Some(post_add)) => {
+                let x_2 = Self::mul(c, &x, &x);
+                let x_4 = Self::mul(c, &x_2, &x_2);
+                c.arithmetic_gate(|g| g.witness(x_4, x, None).mul(F::one()).constant(post_add))
+            }
+            (Some(_), Some(_)) => {
+                unreachable!("currently no one is using this")
+            }
+        }
+    }
+
+    #[cfg(not(feature = "no-optimize"))]
+    fn linear_combination(c: &mut StandardComposer<F, P>, state: &[Self::Field; WIDTH], coeff: impl IntoIterator<Item=Self::ParameterField>) -> Self::Field {
+        // some specialization on width
+        let coeffs = coeff.into_iter().collect::<Vec<_>>();
+        match WIDTH {
+            3 => c.arithmetic_gate(|g| {
+                g.witness(state[0], state[1], None)
+                    .add(coeffs[0], coeffs[1])
+                    .fan_in_3(coeffs[2], state[2])
+            }),
+            _ => state
+                .iter()
+                .zip(coeffs)
+                .fold(Self::zero(c), |acc, (x, y)| {
+                    let tmp = Self::muli(c, x, &y);
+                    Self::add(c, &tmp, &acc)
+                }),
+        }
+    }
+
+    #[cfg(not(feature = "no-optimize"))]
+    fn product_mds_with_sparse_matrix(c: &mut StandardComposer<F, P>, state: &mut [Self::Field; WIDTH], matrix: &SparseMatrix<Self::ParameterField>) {
+        let mut result = Self::zeros::<WIDTH>(c);
+
+        result[0] = Self::linear_combination(c, state, matrix.w_hat.iter().cloned());
+        for (j, val) in result.iter_mut().enumerate().skip(1) {
+            // for each j, result[j] = state[j] + state[0] * v_rest[j-1]
+            *val = c.arithmetic_gate(|g| g.witness(state[0], state[j], None).add(matrix.v_rest[j - 1], F::one()));
+        }
+        *state = result;
+    }
+
+
+
 }
 
 mod r1cs {
@@ -606,7 +665,11 @@ mod tests {
     #[test]
     // poseidon should output something if num_inputs = arity
     fn check_plonk_spec_with_native() {
-        const ARITY: usize = 4;
+        if cfg!(feature = "no-optimize") {
+            println!("WARNING: plonk-specific optimization is disabled");
+        }
+
+        const ARITY: usize = 2;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
 
@@ -622,7 +685,7 @@ mod tests {
 
         let mut c = StandardComposer::<Fr, P>::new();
         let inputs_var = inputs.iter().map(|x| c.add_input(*x)).collect::<Vec<_>>();
-        let mut poseidon_circuit = Poseidon::<_, PlonkSpec, WIDTH>::new(&mut c, param);
+        let mut poseidon_circuit = Poseidon::<_, PlonkSpec<WIDTH>, WIDTH>::new(&mut c, param);
         inputs_var.iter().for_each(|x| {
             let _ = poseidon_circuit.input(*x).unwrap();
         });
