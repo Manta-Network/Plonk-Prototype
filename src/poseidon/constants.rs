@@ -6,7 +6,7 @@ use crate::poseidon::round_numbers::calc_round_numbers;
 use ark_ff::PrimeField;
 use std::convert::TryInto;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct PoseidonConstants<F: PrimeField> {
     pub mds_matrices: MdsMatrices<F>,
     pub round_constants: Vec<F>,

@@ -4,7 +4,7 @@ use std::ops::{Index, IndexMut};
 
 use ark_ff::PrimeField;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct Matrix<T: Clone>(pub Vec<Vec<T>>);
 
 impl<T: Clone> From<Vec<Vec<T>>> for Matrix<T> {

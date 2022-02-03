@@ -191,13 +191,10 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         state: &[Self::Field; WIDTH],
         coeff: impl IntoIterator<Item = Self::ParameterField>,
     ) -> Self::Field {
-        state
-            .iter()
-            .zip(coeff)
-            .fold(Self::zero(c), |acc, (x, y)| {
-                let tmp = Self::muli(c, x, &y);
-                Self::add(c, &tmp, &acc)
-            })
+        state.iter().zip(coeff).fold(Self::zero(c), |acc, (x, y)| {
+            let tmp = Self::muli(c, x, &y);
+            Self::add(c, &tmp, &acc)
+        })
     }
 
     /// compute state @ Mat where `state` is a row vector
@@ -247,7 +244,6 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
         *state = result;
     }
 
-
     /// return (x + pre_add)^5 + post_add
     fn quintic_s_box(
         c: &mut COM,
@@ -283,7 +279,7 @@ pub trait PoseidonSpec<COM, const WIDTH: usize> {
     fn muli(c: &mut COM, x: &Self::Field, y: &Self::ParameterField) -> Self::Field;
 }
 
-#[derive(Derivative)]
+#[derive(Derivative, Clone)]
 #[derivative(Debug(bound = ""))]
 pub struct Poseidon<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize>
 where
@@ -432,8 +428,6 @@ where
         c.arithmetic_gate(|g| g.witness(*x, zero, None).add(*y, F::zero()))
     }
 
-
-
     #[cfg(not(feature = "no-optimize"))]
     fn quintic_s_box(
         c: &mut StandardComposer<F, P>,
@@ -458,7 +452,11 @@ where
     }
 
     #[cfg(not(feature = "no-optimize"))]
-    fn linear_combination(c: &mut StandardComposer<F, P>, state: &[Self::Field; WIDTH], coeff: impl IntoIterator<Item=Self::ParameterField>) -> Self::Field {
+    fn linear_combination(
+        c: &mut StandardComposer<F, P>,
+        state: &[Self::Field; WIDTH],
+        coeff: impl IntoIterator<Item = Self::ParameterField>,
+    ) -> Self::Field {
         // some specialization on width
         let coeffs = coeff.into_iter().collect::<Vec<_>>();
         match WIDTH {
@@ -467,30 +465,31 @@ where
                     .add(coeffs[0], coeffs[1])
                     .fan_in_3(coeffs[2], state[2])
             }),
-            _ => state
-                .iter()
-                .zip(coeffs)
-                .fold(Self::zero(c), |acc, (x, y)| {
-                    let tmp = Self::muli(c, x, &y);
-                    Self::add(c, &tmp, &acc)
-                }),
+            _ => state.iter().zip(coeffs).fold(Self::zero(c), |acc, (x, y)| {
+                let tmp = Self::muli(c, x, &y);
+                Self::add(c, &tmp, &acc)
+            }),
         }
     }
 
     #[cfg(not(feature = "no-optimize"))]
-    fn product_mds_with_sparse_matrix(c: &mut StandardComposer<F, P>, state: &mut [Self::Field; WIDTH], matrix: &SparseMatrix<Self::ParameterField>) {
+    fn product_mds_with_sparse_matrix(
+        c: &mut StandardComposer<F, P>,
+        state: &mut [Self::Field; WIDTH],
+        matrix: &SparseMatrix<Self::ParameterField>,
+    ) {
         let mut result = Self::zeros::<WIDTH>(c);
 
         result[0] = Self::linear_combination(c, state, matrix.w_hat.iter().cloned());
         for (j, val) in result.iter_mut().enumerate().skip(1) {
             // for each j, result[j] = state[j] + state[0] * v_rest[j-1]
-            *val = c.arithmetic_gate(|g| g.witness(state[0], state[j], None).add(matrix.v_rest[j - 1], F::one()));
+            *val = c.arithmetic_gate(|g| {
+                g.witness(state[0], state[j], None)
+                    .add(matrix.v_rest[j - 1], F::one())
+            });
         }
         *state = result;
     }
-
-
-
 }
 
 mod r1cs {
@@ -777,7 +776,8 @@ mod tests {
         let num_profiling = 200;
         let mut total_time = 0;
         for _ in 0..num_profiling {
-            let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
+            let mut neptune_poseidon =
+                neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
             inputs_ff.iter().for_each(|x| {
                 neptune_poseidon.input(*x).unwrap();
             });
@@ -786,12 +786,15 @@ mod tests {
             let end = Instant::now();
             total_time = total_time + end.duration_since(begin).as_micros();
         }
-        println!("Neptune optimized native time {:?} us", total_time as f64/num_profiling as f64);
+        println!(
+            "Neptune optimized native time {:?} us",
+            total_time as f64 / num_profiling as f64
+        );
 
         let mut total_time = 0;
         for _ in 0..num_profiling {
             let mut ark_poseidon_optimized =
-            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts.clone());
+                Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts.clone());
             inputs.iter().for_each(|x| {
                 ark_poseidon_optimized.input(*x).unwrap();
             });
@@ -800,12 +803,12 @@ mod tests {
             let end = Instant::now();
             total_time = total_time + end.duration_since(begin).as_micros();
         }
-        println!("Our optimized native time {:?} us", total_time as f64/num_profiling as f64);
+        println!(
+            "Our optimized native time {:?} us",
+            total_time as f64 / num_profiling as f64
+        );
     }
 
     #[test]
-    fn profile_optimized_r1cs() {
-        
-    }
-
+    fn profile_optimized_r1cs() {}
 }
