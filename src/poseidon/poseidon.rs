@@ -758,4 +758,54 @@ mod tests {
         });
         let _ = poseidon.output_hash(&mut ());
     }
+
+    use std::time::Instant;
+    #[test]
+    fn profile_optimized_native() {
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        type NepArity = generic_array::typenum::U4;
+
+        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
+
+        let mut rng = test_rng();
+        let inputs_ff = (0..ARITY)
+            .map(|_| blstrs::Scalar::random(&mut rng))
+            .collect::<Vec<_>>();
+        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
+
+        let num_profiling = 200;
+        let mut total_time = 0;
+        for _ in 0..num_profiling {
+            let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
+            inputs_ff.iter().for_each(|x| {
+                neptune_poseidon.input(*x).unwrap();
+            });
+            let begin = Instant::now();
+            neptune_poseidon.hash_in_mode(HashMode::OptimizedStatic);
+            let end = Instant::now();
+            total_time = total_time + end.duration_since(begin).as_micros();
+        }
+        println!("Neptune optimized native time {:?} us", total_time as f64/num_profiling as f64);
+
+        let mut total_time = 0;
+        for _ in 0..num_profiling {
+            let mut ark_poseidon_optimized =
+            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts.clone());
+            inputs.iter().for_each(|x| {
+                ark_poseidon_optimized.input(*x).unwrap();
+            });
+            let begin = Instant::now();
+            ark_poseidon_optimized.output_hash(&mut ());
+            let end = Instant::now();
+            total_time = total_time + end.duration_since(begin).as_micros();
+        }
+        println!("Our optimized native time {:?} us", total_time as f64/num_profiling as f64);
+    }
+
+    #[test]
+    fn profile_optimized_r1cs() {
+        
+    }
+
 }

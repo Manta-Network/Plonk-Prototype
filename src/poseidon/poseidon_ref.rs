@@ -220,6 +220,7 @@ impl<COM, S: PoseidonRefSpec<COM, WIDTH>, const WIDTH: usize> PoseidonRef<COM, S
             )
         }
 
+        assert!(self.constants_offset <= self.constants.round_constants.len(), "Not enough round constants ({}), need {}.",  self.constants.round_constants.len(), self.constants_offset);
         self.elements[1].clone()
     }
 }
@@ -515,5 +516,50 @@ mod tests {
         let digest_actual = ark_poseidon.output_hash(&mut ());
 
         assert_eq!(digest_expected, digest_actual);
+    }
+
+    use std::time::Instant;
+    #[test]
+    fn profile_correct_native() {
+        // Profile the latency of 
+        const ARITY: usize = 4;
+        const WIDTH: usize = ARITY + 1;
+        type NepArity = generic_array::typenum::U4;
+
+        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
+
+        let mut rng = test_rng();
+        let inputs_ff = (0..ARITY)
+            .map(|_| blstrs::Scalar::random(&mut rng))
+            .collect::<Vec<_>>();
+        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
+
+        let num_profiling = 200;
+        let mut total_time = 0;
+        for _ in 0..num_profiling {
+            let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
+            inputs_ff.iter().for_each(|x| {
+                neptune_poseidon.input(*x).unwrap();
+            });
+            let begin = Instant::now();
+            neptune_poseidon.hash_in_mode(HashMode::Correct);
+            let end = Instant::now();
+            total_time = total_time + end.duration_since(begin).as_micros();
+        }
+        println!("Neptune unoptimized native time {:?} us", total_time as f64/num_profiling as f64);
+
+        let mut total_time = 0;
+        for _ in 0..num_profiling {
+            let mut ark_poseidon =
+            PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), ark_consts.clone());
+            inputs.iter().for_each(|x| {
+                ark_poseidon.input(*x).unwrap();
+            });
+            let begin = Instant::now();
+            ark_poseidon.output_hash(&mut ());
+            let end = Instant::now();
+            total_time = total_time + end.duration_since(begin).as_micros();
+        }
+        println!("Our unoptimized native time {:?} us", total_time as f64/num_profiling as f64);
     }
 }
