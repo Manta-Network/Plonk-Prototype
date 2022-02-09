@@ -134,7 +134,7 @@ fn poseidon_opt_plonk_verify(c: &mut Criterion) {
                 &proof,
                 &public_inputs,
                 &pi_pos,
-                b"Test"
+                b"test"
             ).unwrap()
         })
     });
