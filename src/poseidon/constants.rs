@@ -1,9 +1,9 @@
 use crate::poseidon::matrix::Matrix;
 use crate::poseidon::mds::{factor_to_sparse_matrixes, MdsMatrices, SparseMatrix};
 use crate::poseidon::preprocessing::compress_round_constants;
-use crate::poseidon::round_constant::generate_constants;
+use crate::poseidon::round_constant::generate_round_constants;
 use crate::poseidon::round_numbers::calc_round_numbers;
-use ark_ff::PrimeField;
+use ark_ff::{FpParameters, PrimeField};
 use std::convert::TryInto;
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -28,10 +28,8 @@ impl<F: PrimeField> PoseidonConstants<F> {
 
         debug_assert_eq!(num_full_rounds % 2, 0);
         let num_half_full_rounds = num_full_rounds / 2;
-        let round_constants = generate_constants(
-            1, // prime field
-            1, // sbox
-            F::size_in_bits() as u16,
+        let round_constants = generate_round_constants(
+            F::Params::MODULUS_BITS as u64,
             WIDTH.try_into().expect("WIDTH is too large"),
             num_full_rounds
                 .try_into()

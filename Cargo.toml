@@ -69,3 +69,4 @@ harness = false
 name = "poseidon_opt_plonk"
 path = "src/benches/poseidon_opt_plonk.rs"
 harness = false
+

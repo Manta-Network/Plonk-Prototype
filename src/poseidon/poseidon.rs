@@ -446,6 +446,16 @@ where
                 c.arithmetic_gate(|g| g.witness(x_4, x, None).mul(F::one()).constant(post_add))
             }
             (Some(_), Some(_)) => {
+                /*
+                 P = (x + a)^5 + b
+                 = x^5 + 5x^4a + 10x^3a^2 + 10x^2a^3 + 5xa^4 + a^5 + b
+
+                 we first compute x^2, x^4 -> 2 constraints
+                 P_a = 10a^2*x^2*x 10*x^2*a^3 + 5xa^4 + a^5 + b    -> 1 constraint
+                 P = x^4 * x + 5x^4a + P_a -> 1 constraint
+
+                  we can see that the constraints counts are same as naive one...
+                 */
                 unreachable!("currently no one is using this")
             }
         }
@@ -758,57 +768,4 @@ mod tests {
         let _ = poseidon.output_hash(&mut ());
     }
 
-    use std::time::Instant;
-    #[test]
-    fn profile_optimized_native() {
-        const ARITY: usize = 4;
-        const WIDTH: usize = ARITY + 1;
-        type NepArity = generic_array::typenum::U4;
-
-        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
-
-        let mut rng = test_rng();
-        let inputs_ff = (0..ARITY)
-            .map(|_| blstrs::Scalar::random(&mut rng))
-            .collect::<Vec<_>>();
-        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
-
-        let num_profiling = 200;
-        let mut total_time = 0;
-        for _ in 0..num_profiling {
-            let mut neptune_poseidon =
-                neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-            inputs_ff.iter().for_each(|x| {
-                neptune_poseidon.input(*x).unwrap();
-            });
-            let begin = Instant::now();
-            neptune_poseidon.hash_in_mode(HashMode::OptimizedStatic);
-            let end = Instant::now();
-            total_time = total_time + end.duration_since(begin).as_micros();
-        }
-        println!(
-            "Neptune optimized native time {:?} us",
-            total_time as f64 / num_profiling as f64
-        );
-
-        let mut total_time = 0;
-        for _ in 0..num_profiling {
-            let mut ark_poseidon_optimized =
-                Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts.clone());
-            inputs.iter().for_each(|x| {
-                ark_poseidon_optimized.input(*x).unwrap();
-            });
-            let begin = Instant::now();
-            ark_poseidon_optimized.output_hash(&mut ());
-            let end = Instant::now();
-            total_time = total_time + end.duration_since(begin).as_micros();
-        }
-        println!(
-            "Our optimized native time {:?} us",
-            total_time as f64 / num_profiling as f64
-        );
-    }
-
-    #[test]
-    fn profile_optimized_r1cs() {}
 }
