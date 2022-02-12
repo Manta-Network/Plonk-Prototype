@@ -51,6 +51,7 @@ where
             curr_hash = poseidon.output_hash(composer);
         }
 
+        // println!("Circuit size: {}", composer.circuit_size());
         Ok(())
     }
 
@@ -70,18 +71,18 @@ fn poseidon_opt_plonk_prove(c: &mut Criterion) {
 
     let pp = PC::setup(
         // +1 per wire, +2 for the permutation poly
-        1 << 14,
+        1 << 15,
         None,
         &mut rng,
     )
     .expect("Unable to sample public parameters.");
 
-    group.bench_function("Height-10 ARITY-2 MT PROVE", |b| {
-        let input = (0..10).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
+    group.bench_function("Height-20 ARITY-2 MT PROVE", |b| {
+        let input = (0..20).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
         let mut circuit = TestCircuit::<Fr, JubJubParameters> {
             constants: PoseidonConstants::generate::<3>(),
             input,
-            padded_circuit_size: 1 << 13,
+            padded_circuit_size: 1 << 14,
             _p: PhantomData,
         };
 
@@ -105,18 +106,18 @@ fn poseidon_opt_plonk_verify(c: &mut Criterion) {
 
     let pp = PC::setup(
         // +1 per wire, +2 for the permutation poly
-        1 << 14,
+        1 << 15,
         None,
         &mut rng,
     )
     .expect("Unable to sample public parameters.");
 
-    group.bench_function("Height-10 ARITY-2 MT VERIFY", |b| {
-        let input = (0..10).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
+    group.bench_function("Height-20 ARITY-2 MT VERIFY", |b| {
+        let input = (0..20).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
         let mut circuit = TestCircuit::<Fr, JubJubParameters> {
             constants: PoseidonConstants::generate::<3>(),
             input,
-            padded_circuit_size: 1 << 13,
+            padded_circuit_size: 1 << 14,
             _p: PhantomData,
         };
 

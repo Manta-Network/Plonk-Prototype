@@ -502,7 +502,7 @@ where
     }
 }
 
-mod r1cs {
+pub mod r1cs {
     use crate::poseidon::poseidon::PoseidonSpec;
     use ark_ff::PrimeField;
     use ark_r1cs_std::fields::fp::FpVar;
