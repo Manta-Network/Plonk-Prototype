@@ -1,3 +1,6 @@
+# This script is adapted from https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/generate_parameters_grain.sage
+# with a little bit modification on MDS generation part, so it is consistent with our codebase.
+
 # Remark: This script contains functionality for GF(2^n), but currently works only over GF(p)! A few small adaptations are needed for GF(2^n).
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 
