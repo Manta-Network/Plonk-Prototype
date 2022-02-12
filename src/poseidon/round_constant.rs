@@ -34,7 +34,7 @@ impl GrainLFSR {
         // b0, b1 describes the field
         append_bits(&mut init_sequence, &mut head, 2, 1u8);
         // b2...=b5 describes s-box: we always use non-inverse s-box
-        append_bits(&mut init_sequence, &mut head, 4, 0b00001u8);
+        append_bits(&mut init_sequence, &mut head, 4, 0b00000u8);
         // b6...=b17 describes prime_num_bits
         append_bits(&mut init_sequence, &mut head, 12, prime_num_bits);
         // b18...=b29 describes width
