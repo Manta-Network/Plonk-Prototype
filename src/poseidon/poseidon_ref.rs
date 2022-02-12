@@ -495,6 +495,8 @@ mod tests {
 
         let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
 
+        assert_eq!(nep_consts.mds_matrices.m[0].iter().map(|x|cast_field(*x)).collect::<Vec<_>>(), ark_consts.mds_matrices.m.0[0].clone());
+
         let mut rng = test_rng();
         let inputs_ff = (0..ARITY)
             .map(|_| blstrs::Scalar::random(&mut rng))

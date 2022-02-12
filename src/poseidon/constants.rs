@@ -23,12 +23,12 @@ impl<F: PrimeField> PoseidonConstants<F> {
     // WIDTH = arity + 1. WIDTH is the *t* in Neptune's spec
     pub fn generate<const WIDTH: usize>() -> Self {
         let arity = WIDTH - 1;
-        let mds_matrices = MdsMatrices::new(WIDTH);
+
         let (num_full_rounds, num_partial_rounds) = calc_round_numbers(WIDTH, true);
 
         debug_assert_eq!(num_full_rounds % 2, 0);
         let num_half_full_rounds = num_full_rounds / 2;
-        let round_constants = generate_round_constants(
+        let (round_constants, _) = generate_round_constants(
             F::Params::MODULUS_BITS as u64,
             WIDTH.try_into().expect("WIDTH is too large"),
             num_full_rounds
@@ -39,6 +39,8 @@ impl<F: PrimeField> PoseidonConstants<F> {
                 .expect("num_partial_rounds is too large"),
         );
         let domain_tag = F::from(((1 << arity) - 1) as u64);
+
+        let mds_matrices = MdsMatrices::new(WIDTH);
 
         let compressed_round_constants = compress_round_constants(
             WIDTH,
