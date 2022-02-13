@@ -1,8 +1,6 @@
-use std::collections::BTreeSet;
 // some code adapted from https://github.com/filecoin-project/neptune/blob/master/src/mds.rs
-use crate::poseidon::lfsr::GrainLFSR;
 use crate::poseidon::matrix::Matrix;
-use ark_ff::{FpParameters, PrimeField};
+use ark_ff::PrimeField;
 
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct MdsMatrices<F: PrimeField> {
@@ -37,48 +35,26 @@ impl<F: PrimeField> MdsMatrices<F> {
         }
     }
 
-    fn check_mds_xs_ys(xsys: &[F]) -> bool {
-        debug_assert_eq!(xsys.len() % 2, 0);
-        let t = xsys.len() >> 1;
-        // first, xsys should not contain duplicated value
-        if xsys.iter().cloned().collect::<BTreeSet<_>>().len() != t * 2 {
-            return false;
-        }
-        let xs = &xsys[0..t];
-        let ys = &xsys[t..];
-        // second, forall x in xs, y in ys, x + y != p (that is x + y != 0 mod p)
-        for x in xs {
-            for y in ys {
-                let result: F = *x + *y;
-                if result.is_zero() {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
     fn generate_mds(t: usize) -> Matrix<F> {
-
         let xs: Vec<F> = (0..t as u64).map(F::from).collect();
         let ys: Vec<F> = (t as u64..2 * t as u64).map(F::from).collect();
 
-            let matrix = xs
-                .iter()
-                .map(|xs_item| {
-                    ys.iter()
-                        .map(|ys_item| {
-                            // Generate the entry at (i,j)
-                            let mut tmp = *xs_item;
-                            tmp.add_assign(ys_item);
-                            tmp.inverse().unwrap()
-                        })
-                        .collect()
-                })
-                .collect::<Matrix<F>>();
+        let matrix = xs
+            .iter()
+            .map(|xs_item| {
+                ys.iter()
+                    .map(|ys_item| {
+                        // Generate the entry at (i,j)
+                        let mut tmp = *xs_item;
+                        tmp.add_assign(ys_item);
+                        tmp.inverse().unwrap()
+                    })
+                    .collect()
+            })
+            .collect::<Matrix<F>>();
 
-            assert!(matrix.is_invertible());
-            assert_eq!(matrix, matrix.transpose());
+        assert!(matrix.is_invertible());
+        assert_eq!(matrix, matrix.transpose());
         matrix
     }
 
@@ -192,11 +168,11 @@ pub fn factor_to_sparse_matrixes<F: PrimeField>(
 
 #[cfg(test)]
 mod tests {
+    use crate::poseidon::matrix::Matrix;
     use crate::poseidon::mds::MdsMatrices;
     use ark_bls12_381::Fr;
-    use ark_ff::{field_new, FpParameters, PrimeField};
+    use ark_ff::field_new;
     use ark_std::{test_rng, UniformRand};
-    use crate::poseidon::matrix::Matrix;
 
     #[test]
     fn test_mds_matrices_creation() {
@@ -269,21 +245,50 @@ mod tests {
         // value come out from sage script
         let width = 3;
 
-        let expected_mds = Matrix(vec![vec![
-            field_new!(Fr, "34957250116750793652965160338790643891793701667018425215069105799959054123009"),
-            field_new!(Fr, "39326906381344642859585805381139474378267914375395728366952744024953935888385"),
-            field_new!(Fr, "31461525105075714287668644304911579502614331500316582693562195219963148710708"),
-        ],
-        vec![
-            field_new!(Fr, "39326906381344642859585805381139474378267914375395728366952744024953935888385"),
-            field_new!(Fr, "31461525105075714287668644304911579502614331500316582693562195219963148710708"),
-            field_new!(Fr, "43696562645938492066206450423488304864742127083773031518836382249948817653761"),
-        ],
-        vec![
-            field_new!(Fr, "31461525105075714287668644304911579502614331500316582693562195219963148710708"),
-            field_new!(Fr, "43696562645938492066206450423488304864742127083773031518836382249948817653761"),
-            field_new!(Fr, "14981678621464625851270783002338847382197300714436467949315331057125308909861"),
-        ]]);
+        let expected_mds = Matrix(vec![
+            vec![
+                field_new!(
+                    Fr,
+                    "34957250116750793652965160338790643891793701667018425215069105799959054123009"
+                ),
+                field_new!(
+                    Fr,
+                    "39326906381344642859585805381139474378267914375395728366952744024953935888385"
+                ),
+                field_new!(
+                    Fr,
+                    "31461525105075714287668644304911579502614331500316582693562195219963148710708"
+                ),
+            ],
+            vec![
+                field_new!(
+                    Fr,
+                    "39326906381344642859585805381139474378267914375395728366952744024953935888385"
+                ),
+                field_new!(
+                    Fr,
+                    "31461525105075714287668644304911579502614331500316582693562195219963148710708"
+                ),
+                field_new!(
+                    Fr,
+                    "43696562645938492066206450423488304864742127083773031518836382249948817653761"
+                ),
+            ],
+            vec![
+                field_new!(
+                    Fr,
+                    "31461525105075714287668644304911579502614331500316582693562195219963148710708"
+                ),
+                field_new!(
+                    Fr,
+                    "43696562645938492066206450423488304864742127083773031518836382249948817653761"
+                ),
+                field_new!(
+                    Fr,
+                    "14981678621464625851270783002338847382197300714436467949315331057125308909861"
+                ),
+            ],
+        ]);
 
         let mds = MdsMatrices::<Fr>::generate_mds(width);
         assert_eq!(mds, expected_mds);

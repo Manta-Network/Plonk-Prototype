@@ -10,7 +10,7 @@ pub struct GrainLFSR {
 fn append_bits<T: Into<u128>>(state: &mut [bool; 80], head: &mut usize, n: usize, from: T) {
     let val = from.into() as u128;
     for i in (0..n).rev() {
-        state[*head] = ((val >> i) & 1 != 0);
+        state[*head] = (val >> i) & 1 != 0;
         *head += 1;
         *head %= 80;
     }

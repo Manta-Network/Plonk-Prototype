@@ -610,7 +610,7 @@ mod tests {
         inputs.iter().for_each(|x| {
             let _ = poseidon_optimized.input(*x).unwrap();
         });
-        let hash_actual = poseidon_optimized.output_hash(&mut ());
+        let _ = poseidon_optimized.output_hash(&mut ());
         poseidon_optimized.reset(&mut ());
 
         let default = Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param);

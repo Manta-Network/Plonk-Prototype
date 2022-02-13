@@ -8,7 +8,7 @@ use ark_ff::PrimeField;
 use derivative::Derivative;
 use plonk_core::constraint_system::StandardComposer;
 use plonk_core::prelude as plonk;
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug};
 use std::marker::PhantomData;
 
 pub trait PoseidonRefSpec<COM, const WIDTH: usize> {

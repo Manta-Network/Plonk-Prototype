@@ -17,7 +17,7 @@ fn n_sboxes(t: usize, rf: usize, rp: usize) -> usize {
 
 
 /// Returns the round numbers for a given arity `(R_F, R_P)`.
-pub(crate) fn round_numbers_base(arity: usize) -> (usize, usize) {
+pub fn round_numbers_base(arity: usize) -> (usize, usize) {
     let t = arity + 1;
     calc_round_numbers(t, true)
 }
@@ -30,7 +30,7 @@ pub(crate) fn round_numbers_base(arity: usize) -> (usize, usize) {
 /// Then it is unlikely that a new attack breaks through this number,
 /// but even if this happens then the complexity is almost surely above 2^64, and you will be safe."
 /// - D Khovratovich
-pub(crate) fn round_numbers_strengthened(arity: usize) -> (usize, usize) {
+pub fn round_numbers_strengthened(arity: usize) -> (usize, usize) {
     let (full_round, partial_rounds) = round_numbers_base(arity);
 
     // Increase by 25%, rounding up.

@@ -1,4 +1,4 @@
-use ark_ff::{BigInteger, FpParameters, PrimeField};
+use ark_ff::{PrimeField};
 use crate::poseidon::lfsr::GrainLFSR;
 
 /// return round constants, and return the LFSR used to generate MDS matrix
