@@ -201,7 +201,6 @@ impl<COM, S: PoseidonRefSpec<COM, WIDTH>, const WIDTH: usize> PoseidonRef<COM, S
             &mut self.elements,
         );
 
-
         for _ in 1..self.constants.partial_rounds {
             S::partial_round(
                 c,
@@ -220,7 +219,12 @@ impl<COM, S: PoseidonRefSpec<COM, WIDTH>, const WIDTH: usize> PoseidonRef<COM, S
             )
         }
 
-        assert!(self.constants_offset <= self.constants.round_constants.len(), "Not enough round constants ({}), need {}.",  self.constants.round_constants.len(), self.constants_offset);
+        assert!(
+            self.constants_offset <= self.constants.round_constants.len(),
+            "Not enough round constants ({}), need {}.",
+            self.constants.round_constants.len(),
+            self.constants_offset
+        );
         self.elements[1].clone()
     }
 }
@@ -260,7 +264,8 @@ impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<(), WIDTH> for NativeSpe
 
 pub struct PlonkSpecRef;
 
-impl<F, P, const WIDTH: usize> PoseidonRefSpec<plonk::StandardComposer<F, P>, WIDTH> for PlonkSpecRef
+impl<F, P, const WIDTH: usize> PoseidonRefSpec<plonk::StandardComposer<F, P>, WIDTH>
+    for PlonkSpecRef
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
@@ -363,6 +368,7 @@ mod r1cs {
 mod tests {
     use super::*;
     use ark_ec::PairingEngine;
+    use ark_ff::field_new;
     use ark_r1cs_std::R1CSVar;
     use ark_relations::r1cs::ConstraintSystem;
     type E = ark_bls12_381::Bls12_381;
@@ -463,105 +469,40 @@ mod tests {
         let _ = poseidon.output_hash(&mut ());
     }
 
-    use crate::tests::conversion::cast_field;
-    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
-    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
-    use neptune::Strength;
-    // let constants = NeptunePoseidonConstants::<Fr, A>::new_with_strength(strength);
-    // let mut p = NeptunePoseidon::<Fr, A>::new(&constants);
-    // let mut p2 = NeptunePoseidon::<Fr, A>::new(&constants);
-    // let mut p3 = NeptunePoseidon::<Fr, A>::new(&constants);
-    // let mut p4 = NeptunePoseidon::<Fr, A>::new(&constants);
-
-    //     let test_arity = constants.arity();
-    //     for n in 0..test_arity {
-    //         let scalar = Fr::from(n as u64);
-    //         p.input(scalar).unwrap();
-    //         p2.input(scalar).unwrap();
-    //         p3.input(scalar).unwrap();
-    //         p4.input(scalar).unwrap();
-    //     }
-
-    //     let digest = p.hash();
-    //     let digest2 = p2.hash_in_mode(Correct);
-    //     let digest3 = p3.hash_in_mode(OptimizedStatic);
-    //     let digest4 = p4.hash_in_mode(OptimizedDynamic);
-
     #[test]
-    fn compare_with_neptune() {
+    fn test_poseidon_ref() {
+        // check consistency with: poseidonperm_bls381_width3.sage
         const ARITY: usize = 2;
         const WIDTH: usize = ARITY + 1;
-        type NepArity = generic_array::typenum::U2;
 
-        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
+        let constants = PoseidonConstants::generate::<WIDTH>();
 
-        assert_eq!(nep_consts.mds_matrices.m[0].iter().map(|x|cast_field(*x)).collect::<Vec<_>>(), ark_consts.mds_matrices.m.0[0].clone());
+        let inputs = [field_new!(Fr, "1"), field_new!(Fr, "2")];
 
-        let mut rng = test_rng();
-        let inputs_ff = (0..ARITY)
-            .map(|_| blstrs::Scalar::random(&mut rng))
-            .collect::<Vec<_>>();
-        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
+        let mut poseidon = PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), constants);
+        assert_eq!(poseidon.elements[0], field_new!(Fr, "3")); // ARITY = 2, (1 << ARITY) - 1 = 3
 
-        let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-        let mut ark_poseidon =
-            PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), ark_consts);
-
-        inputs_ff.iter().for_each(|x| {
-            neptune_poseidon.input(*x).unwrap();
-        });
         inputs.iter().for_each(|x| {
-            ark_poseidon.input(*x).unwrap();
+            poseidon.input(*x).unwrap();
         });
 
-        let digest_expected = cast_field(neptune_poseidon.hash_in_mode(HashMode::Correct));
-        let digest_actual = ark_poseidon.output_hash(&mut ());
+        let digest_expected = [
+            field_new!(
+                Fr,
+                "1808609226548932412441401219270714120272118151392880709881321306315053574086"
+            ),
+            field_new!(
+                Fr,
+                "13469396364901763595452591099956641926259481376691266681656453586107981422876"
+            ),
+            field_new!(
+                Fr,
+                "28037046374767189790502007352434539884533225547205397602914398240898150312947"
+            ),
+        ];
+        poseidon.output_hash(&mut ());
+        let digest_actual = poseidon.elements;
 
         assert_eq!(digest_expected, digest_actual);
-    }
-
-    use std::time::Instant;
-    #[test]
-    fn profile_correct_native() {
-        // Profile the latency of 
-        const ARITY: usize = 4;
-        const WIDTH: usize = ARITY + 1;
-        type NepArity = generic_array::typenum::U4;
-
-        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
-
-        let mut rng = test_rng();
-        let inputs_ff = (0..ARITY)
-            .map(|_| blstrs::Scalar::random(&mut rng))
-            .collect::<Vec<_>>();
-        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
-
-        let num_profiling = 200;
-        let mut total_time = 0;
-        for _ in 0..num_profiling {
-            let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-            inputs_ff.iter().for_each(|x| {
-                neptune_poseidon.input(*x).unwrap();
-            });
-            let begin = Instant::now();
-            neptune_poseidon.hash_in_mode(HashMode::Correct);
-            let end = Instant::now();
-            total_time = total_time + end.duration_since(begin).as_micros();
-        }
-        println!("Neptune unoptimized native time {:?} us", total_time as f64/num_profiling as f64);
-
-        let mut total_time = 0;
-        for _ in 0..num_profiling {
-            let mut ark_poseidon =
-            PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), ark_consts.clone());
-            inputs.iter().for_each(|x| {
-                ark_poseidon.input(*x).unwrap();
-            });
-            let begin = Instant::now();
-            ark_poseidon.output_hash(&mut ());
-            let end = Instant::now();
-            total_time = total_time + end.duration_since(begin).as_micros();
-        }
-        println!("Our unoptimized native time {:?} us", total_time as f64/num_profiling as f64);
     }
 }

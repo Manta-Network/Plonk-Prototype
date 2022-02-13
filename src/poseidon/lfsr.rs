@@ -154,21 +154,21 @@ mod tests {
     fn test_grain_lfsr_consistency() {
         // sage script adapted from https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/generate_parameters_grain.sage
         // command:
-        // sage generate_parameters_grain_deterministic.sage 1 0 255 3 8 31 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+        // sage generate_parameters_grain_deterministic.sage 1 0 255 3 8 55 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
-        let mut lfsr = GrainLFSR::new(255, 3, 8, 31);
+        let mut lfsr = GrainLFSR::new(255, 3, 8, 55);
         assert_eq!(
             lfsr.get_field_elements_rejection_sampling::<Fr>(1)[0],
             field_new!(
                 Fr,
-                "27117311055620256798560880810000042840428971800021819916023577129547249660720"
+                "41764196652518280402801918994067134807238124178723763855975902025540297174931"
             )
         );
         assert_eq!(
             lfsr.get_field_elements_rejection_sampling::<Fr>(1)[0],
             field_new!(
                 Fr,
-                "51641662388546346858987925410984003801092143452466182801674685248597955169158"
+                "12678502092746318913289523392430826887011664085277767208266352862540971998250"
             )
         );
     }

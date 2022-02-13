@@ -267,7 +267,6 @@ mod tests {
     #[test]
     fn test_mds_creation_hardcoded() {
         // value come out from sage script
-        let (rf, rp) = (8, 31);
         let width = 3;
 
         let expected_mds = Matrix(vec![vec![

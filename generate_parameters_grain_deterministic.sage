@@ -1,6 +1,3 @@
-# This script is adapted from https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/generate_parameters_grain.sage
-# with a little bit modification on MDS generation part, so it is consistent with our codebase.
-
 # Remark: This script contains functionality for GF(2^n), but currently works only over GF(p)! A few small adaptations are needed for GF(2^n).
 from sage.rings.polynomial.polynomial_gf2x import GF2X_BuildIrred_list
 
@@ -45,7 +42,7 @@ def grain_sr_generator():
         new_bit = bit_sequence[62] ^^ bit_sequence[51] ^^ bit_sequence[38] ^^ bit_sequence[23] ^^ bit_sequence[13] ^^ bit_sequence[0]
         bit_sequence.pop(0)
         bit_sequence.append(new_bit)
-        
+
     while True:
         new_bit = bit_sequence[62] ^^ bit_sequence[51] ^^ bit_sequence[38] ^^ bit_sequence[23] ^^ bit_sequence[13] ^^ bit_sequence[0]
         bit_sequence.pop(0)
@@ -62,7 +59,7 @@ def grain_sr_generator():
         bit_sequence.append(new_bit)
         yield new_bit
 grain_gen = grain_sr_generator()
-        
+
 def grain_random_bits(num_bits):
     random_bits = [next(grain_gen) for i in range(0, num_bits)]
     # random_bits.reverse() ## Remove comment to start from least significant bit
@@ -109,13 +106,17 @@ def print_round_constants(round_constants, n, field):
     hex_length = int(ceil(float(n) / 4)) + 2 # +2 for "0x"
     print(["{0:#0{1}x}".format(entry, hex_length) for entry in round_constants])
 
+def print_round_constants_arkff(round_constants):
+    print("Round constants for ark-ff:")
+    print("vec![" + ",".join(["field_new!(Fr, {})".format(int(entry)) for entry in round_constants]) + "]")
+
 def create_mds_p(n, t):
     M = matrix(F, t, t)
 
     # Sample random distinct indices and assign to xs and ys
     while True:
         flag = True
-        # Tom's Note: Instead of using LFSR, we use a deterministic approach that ensures MDS matrix is symmetric.
+        # Tom's Note: TODO
         rand_list = [F(i) for i in range(0, 2*t)]
 
         xs = rand_list[:t]
@@ -284,7 +285,7 @@ def algorithm_3(M, NUM_CELLS):
         # if next_r == True:
         #     continue
         # return [False, [IS, I_j, r]]
-    
+
     return [True, None]
 
 def generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS):
@@ -320,13 +321,25 @@ def print_linear_layer(M, n, t):
     matrix_string += "]"
     print("MDS matrix:\n", matrix_string)
 
+def print_linear_layer_arkff(M,  t):
+    matrix_string = "vec!["
+    for i in range(0, t):
+        matrix_string += "vec![" + ",".join(["field_new!(Fr, {})".format(int(entry)) for entry in M[i]]) + "]"
+        if i < (t-1):
+            matrix_string += ","
+    matrix_string += "]"
+    print("MDS for ark-ff:\n", matrix_string)
+
 # Init
 init_generator(FIELD, SBOX, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED)
 
 # Round constants
 round_constants = generate_constants(FIELD, FIELD_SIZE, NUM_CELLS, R_F_FIXED, R_P_FIXED, PRIME_NUMBER)
 print_round_constants(round_constants, FIELD_SIZE, FIELD)
+print_round_constants_arkff(round_constants)
 
 # Matrix
 linear_layer = generate_matrix(FIELD, FIELD_SIZE, NUM_CELLS)
+
 print_linear_layer(linear_layer, FIELD_SIZE, NUM_CELLS)
+print_linear_layer_arkff(linear_layer,  NUM_CELLS)
