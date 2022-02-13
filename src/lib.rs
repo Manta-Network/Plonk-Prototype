@@ -15,7 +15,5 @@
 // along with manta-api.  If not, see <http://www.gnu.org/licenses/>.
 
 pub mod poseidon;
-#[cfg(test)]
-mod tests;
 // pub mod merkle_tree;
 // pub mod zk;

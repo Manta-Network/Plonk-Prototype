@@ -376,11 +376,47 @@ mod tests {
     type Fr = <E as PairingEngine>::Fr;
     use crate::poseidon::poseidon_ref::r1cs::R1csSpecRef;
     use ark_std::{test_rng, UniformRand};
-    use ff::Field;
+
+    #[test]
+    fn test_poseidon_ref() {
+        // check consistency with: poseidonperm_bls381_width3.sage
+        const ARITY: usize = 2;
+        const WIDTH: usize = ARITY + 1;
+
+        let constants = PoseidonConstants::generate::<WIDTH>();
+
+        let inputs = [field_new!(Fr, "1"), field_new!(Fr, "2")];
+
+        let mut poseidon = PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), constants);
+        assert_eq!(poseidon.elements[0], field_new!(Fr, "3")); // ARITY = 2, (1 << ARITY) - 1 = 3
+
+        inputs.iter().for_each(|x| {
+            poseidon.input(*x).unwrap();
+        });
+
+        let digest_expected = [
+            field_new!(
+                Fr,
+                "1808609226548932412441401219270714120272118151392880709881321306315053574086"
+            ),
+            field_new!(
+                Fr,
+                "13469396364901763595452591099956641926259481376691266681656453586107981422876"
+            ),
+            field_new!(
+                Fr,
+                "28037046374767189790502007352434539884533225547205397602914398240898150312947"
+            ),
+        ];
+        poseidon.output_hash(&mut ());
+        let digest_actual = poseidon.elements;
+
+        assert_eq!(digest_expected, digest_actual);
+    }
 
     #[test]
     // poseidon should output something if num_inputs = arity
-    fn sanity_test() {
+    fn test_plonk_consistency() {
         const ARITY: usize = 4;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
@@ -417,7 +453,7 @@ mod tests {
 
     #[test]
     // poseidon should output something if num_inputs = arity
-    fn sanity_test_r1cs() {
+    fn test_r1cs_consistency() {
         const ARITY: usize = 2;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
@@ -456,7 +492,7 @@ mod tests {
     #[test]
     #[should_panic]
     // poseidon should output something if num_inputs > arity
-    fn sanity_test_failure() {
+    fn test_failure() {
         const ARITY: usize = 4;
         const WIDTH: usize = ARITY + 1;
         let mut rng = test_rng();
@@ -467,42 +503,5 @@ mod tests {
             let _ = poseidon.input(Fr::rand(&mut rng)).unwrap();
         });
         let _ = poseidon.output_hash(&mut ());
-    }
-
-    #[test]
-    fn test_poseidon_ref() {
-        // check consistency with: poseidonperm_bls381_width3.sage
-        const ARITY: usize = 2;
-        const WIDTH: usize = ARITY + 1;
-
-        let constants = PoseidonConstants::generate::<WIDTH>();
-
-        let inputs = [field_new!(Fr, "1"), field_new!(Fr, "2")];
-
-        let mut poseidon = PoseidonRef::<(), NativeSpecRef<Fr>, WIDTH>::new(&mut (), constants);
-        assert_eq!(poseidon.elements[0], field_new!(Fr, "3")); // ARITY = 2, (1 << ARITY) - 1 = 3
-
-        inputs.iter().for_each(|x| {
-            poseidon.input(*x).unwrap();
-        });
-
-        let digest_expected = [
-            field_new!(
-                Fr,
-                "1808609226548932412441401219270714120272118151392880709881321306315053574086"
-            ),
-            field_new!(
-                Fr,
-                "13469396364901763595452591099956641926259481376691266681656453586107981422876"
-            ),
-            field_new!(
-                Fr,
-                "28037046374767189790502007352434539884533225547205397602914398240898150312947"
-            ),
-        ];
-        poseidon.output_hash(&mut ());
-        let digest_actual = poseidon.elements;
-
-        assert_eq!(digest_expected, digest_actual);
     }
 }

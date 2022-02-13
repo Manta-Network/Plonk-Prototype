@@ -152,8 +152,6 @@ mod tests {
 
     #[test]
     fn test_grain_lfsr_consistency() {
-        // sage script adapted from https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/generate_parameters_grain.sage
-        // command:
         // sage generate_parameters_grain_deterministic.sage 1 0 255 3 8 55 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
         let mut lfsr = GrainLFSR::new(255, 3, 8, 55);

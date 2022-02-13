@@ -447,15 +447,15 @@ where
             }
             (Some(_), Some(_)) => {
                 /*
-                 P = (x + a)^5 + b
-                 = x^5 + 5x^4a + 10x^3a^2 + 10x^2a^3 + 5xa^4 + a^5 + b
+                P = (x + a)^5 + b
+                = x^5 + 5x^4a + 10x^3a^2 + 10x^2a^3 + 5xa^4 + a^5 + b
 
-                 we first compute x^2, x^4 -> 2 constraints
-                 P_a = 10a^2*x^2*x 10*x^2*a^3 + 5xa^4 + a^5 + b    -> 1 constraint
-                 P = x^4 * x + 5x^4a + P_a -> 1 constraint
+                we first compute x^2, x^4 -> 2 constraints
+                P_a = 10a^2*x^2*x 10*x^2*a^3 + 5xa^4 + a^5 + b    -> 1 constraint
+                P = x^4 * x + 5x^4a + P_a -> 1 constraint
 
-                  we can see that the constraints counts are same as naive one...
-                 */
+                 we can see that the constraints counts are same as naive one...
+                */
                 unreachable!("currently no one is using this")
             }
         }
@@ -560,21 +560,18 @@ mod tests {
     use crate::poseidon::constants::PoseidonConstants;
     use crate::poseidon::poseidon::r1cs::R1csSpec;
     use crate::poseidon::poseidon_ref::{NativeSpecRef, PoseidonRef};
-    use crate::tests::conversion::cast_field;
-    use crate::tests::neptune_hyper_parameter::collect_neptune_constants;
+
     use ark_ec::PairingEngine;
     use ark_r1cs_std::R1CSVar;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::{test_rng, UniformRand};
-    use ff::Field;
-    use neptune::poseidon::{HashMode, PoseidonConstants as NeptunePoseidonConstants};
-    use neptune::Strength;
 
     type E = ark_bls12_381::Bls12_381;
     type P = ark_ed_on_bls12_381::EdwardsParameters;
     type Fr = <E as PairingEngine>::Fr;
 
     #[test]
+    // because poseidon_ref matches reference implementation, if optimized poseidon matches poseidon_ref, then it also matches reference implementation.
     fn compare_with_poseidon_ref() {
         const ARITY: usize = 4;
         const WIDTH: usize = ARITY + 1;
@@ -597,37 +594,6 @@ mod tests {
         let hash_actual = poseidon_optimized.output_hash(&mut ());
 
         assert_eq!(hash_expected, hash_actual);
-    }
-
-    #[test]
-    fn compare_with_neptune_optimized() {
-        const ARITY: usize = 2;
-        const WIDTH: usize = ARITY + 1;
-        type NepArity = generic_array::typenum::U2;
-
-        let (nep_consts, ark_consts) = collect_neptune_constants::<NepArity>(Strength::Standard);
-
-        let mut rng = test_rng();
-        let inputs_ff = (0..ARITY)
-            .map(|_| blstrs::Scalar::random(&mut rng))
-            .collect::<Vec<_>>();
-        let inputs = inputs_ff.iter().map(|&x| cast_field(x)).collect::<Vec<_>>();
-
-        let mut neptune_poseidon = neptune::Poseidon::<blstrs::Scalar, NepArity>::new(&nep_consts);
-        let mut ark_poseidon_optimized =
-            Poseidon::<(), NativeSpec<Fr, WIDTH>, WIDTH>::new(&mut (), ark_consts);
-
-        inputs_ff.iter().for_each(|x| {
-            neptune_poseidon.input(*x).unwrap();
-        });
-        inputs.iter().for_each(|x| {
-            ark_poseidon_optimized.input(*x).unwrap();
-        });
-
-        let digest_expected = cast_field(neptune_poseidon.hash_in_mode(HashMode::OptimizedStatic));
-        let digest_actual = ark_poseidon_optimized.output_hash(&mut ());
-
-        assert_eq!(digest_expected, digest_actual);
     }
 
     #[test]
@@ -656,20 +622,7 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn hash_det() {
-    //     const ARITY: usize = 4;
-    //     const WIDTH: usize = ARITY + 1;
-    //     let mut rng = test_rng();
-    //     let param = PoseidonConstants::generate::<WIDTH>();
-    //     let inputs = (0..ARITY).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
-    //     let mut poseidon_optimized = Poseidon::<(), NativePoseidonSpec<Fr, WIDTH>, WIDTH>::new(&mut (), param.clone());
-    //     inputs.iter().for_each(|x| {
-    //         let _ = poseidon_optimized.input(*x).unwrap();
-    //     });
-    //     let mut poseidon_optimized2 = poseidon_optimized.clone();
-    //     assert_eq!(poseidon_optimized.output_hash(&mut ()), poseidon_optimized2.output_hash(&mut ()));
-    // }
+
 
     #[test]
     // poseidon should output something if num_inputs = arity
@@ -767,5 +720,4 @@ mod tests {
         });
         let _ = poseidon.output_hash(&mut ());
     }
-
 }

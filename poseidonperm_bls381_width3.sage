@@ -1,3 +1,5 @@
+# adapted from https://extgit.iaik.tugraz.at/krypto/hadeshash/-/blob/master/code/poseidonperm_x5_255_3.sage
+
 # M = 128
 N = 765
 arity = 2
