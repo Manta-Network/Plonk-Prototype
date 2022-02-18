@@ -14,6 +14,20 @@
 // You should have received a copy of the GNU General Public License
 // along with manta-api.  If not, see <http://www.gnu.org/licenses/>.
 
+pub mod merkle_tree;
+
 pub mod poseidon;
 // pub mod merkle_tree;
 // pub mod zk;
+/// Native Compiler Marker Trait
+///
+/// This trait is only implemented for `()`, the only native compiler.
+pub trait Native {
+    /// Returns the native compiler.
+    fn compiler() -> Self;
+}
+
+impl Native for () {
+    #[inline]
+    fn compiler() -> Self {}
+}
