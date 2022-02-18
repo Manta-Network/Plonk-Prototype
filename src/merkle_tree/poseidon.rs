@@ -1,4 +1,5 @@
-use crate::merkle_tree::{BinaryHashFunction, HashFunction, UnaryHashFunction};
+use crate::merkle_tree::{BinaryHashFunction, HashFunction, InnerHash, LeafHash, UnaryHashFunction};
+use crate::poseidon::constants::PoseidonConstants;
 use crate::poseidon::poseidon::{Poseidon, PoseidonSpec};
 
 macro_rules! impl_hash_arity {
@@ -30,7 +31,9 @@ impl_hash_arity!(6);
 impl_hash_arity!(7);
 impl_hash_arity!(8);
 
-impl<'a, COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> UnaryHashFunction<COM> for Poseidon<'a, COM, S, WIDTH> {
+impl<'a, COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> UnaryHashFunction<COM>
+    for Poseidon<'a, COM, S, WIDTH>
+{
     type Input = S::Field;
     type Output = S::Field;
 
@@ -51,6 +54,56 @@ impl<'a, COM, S: PoseidonSpec<COM, 3>> BinaryHashFunction<COM> for Poseidon<'a, 
     }
 }
 
+pub struct PoseidonStateless<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> {
+    _marker: std::marker::PhantomData<(COM, S)>,
+}
+
+impl<COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> PoseidonStateless<COM, S, WIDTH> {
+    pub fn start_state<'a>(
+        c: &mut COM,
+        param: &'a PoseidonConstants<S::ParameterField>,
+    ) -> Poseidon<'a, COM, S, WIDTH> {
+        Poseidon::<COM, S, WIDTH>::new(c, param)
+    }
+}
+
+impl<COM, S: PoseidonSpec<COM, 3>> InnerHash<COM> for PoseidonStateless<COM, S, 3> {
+    type LeafDigest = S::Field;
+    type Parameters = PoseidonConstants<S::ParameterField>;
+    type Output = S::Field;
+
+    fn join_in(
+        parameters: &Self::Parameters,
+        lhs: &Self::Output,
+        rhs: &Self::Output,
+        compiler: &mut COM,
+    ) -> Self::Output {
+        let state = PoseidonStateless::start_state(compiler, parameters);
+        <Poseidon<COM, S, 3> as BinaryHashFunction::<COM>>::hash_in(&state, lhs, rhs, compiler)
+    }
+
+    fn join_leaves_in(
+        parameters: &Self::Parameters,
+        lhs: &Self::LeafDigest,
+        rhs: &Self::LeafDigest,
+        compiler: &mut COM,
+    ) -> Self::Output {
+        Self::join_in(parameters, lhs, rhs, compiler)
+    }
+}
+
+impl< COM, S: PoseidonSpec<COM, WIDTH>, const WIDTH: usize> LeafHash<COM>
+for PoseidonStateless< COM, S, WIDTH>
+{
+    type Leaf = S::Field;
+    type Parameters = PoseidonConstants<S::ParameterField>;
+    type Output = S::Field;
+
+    fn digest_in(parameters: &Self::Parameters, leaf: &Self::Leaf, compiler: &mut COM) -> Self::Output {
+        let state = PoseidonStateless::start_state(compiler, parameters);
+        <Poseidon<COM, S, WIDTH> as UnaryHashFunction::<COM>>::hash_in(&state, leaf, compiler)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -63,8 +116,7 @@ mod tests {
     #[test]
     fn test_hash() {
         let params = PoseidonConstants::generate::<3>();
-        let poseidon =
-            Poseidon::<_, NativeSpec<Fr, 3>, 3>::new(&mut (), &params);
+        let poseidon = Poseidon::<_, NativeSpec<Fr, 3>, 3>::new(&mut (), &params);
         let inputs = [field_new!(Fr, "1"), field_new!(Fr, "2")];
         let output = poseidon.hash(&inputs[0], &inputs[1]);
         let expected = field_new!(
