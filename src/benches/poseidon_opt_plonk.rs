@@ -5,12 +5,12 @@ use ark_ff::PrimeField;
 use ark_poly::univariate::DensePolynomial;
 use ark_poly_commit::sonic_pc::SonicKZG10;
 use ark_poly_commit::PolynomialCommitment;
-use ark_std::{test_rng, UniformRand};
+use ark_std::test_rng;
 use criterion::{criterion_group, criterion_main, Criterion};
 use plonk_core::circuit::PublicInputBuilder;
 use plonk_core::prelude::*;
 use plonk_protoype::poseidon::constants::PoseidonConstants;
-use plonk_protoype::poseidon::poseidon::{NativeSpec, PlonkSpec, Poseidon};
+use plonk_protoype::poseidon::poseidon::{PlonkSpec, Poseidon};
 use rand::Rng;
 use std::marker::PhantomData;
 
@@ -35,7 +35,7 @@ where
     const CIRCUIT_ID: [u8; 32] = [0xff; 32];
 
     fn gadget(&mut self, composer: &mut StandardComposer<F, P>) -> Result<(), Error> {
-        let mut poseidon = Poseidon::<_, PlonkSpec<3>, 3>::new(composer, self.constants.clone());
+        let mut poseidon = Poseidon::<_, PlonkSpec<3>, 3>::new(composer, &self.constants);
 
         let inputs_var = self
             .input
@@ -142,5 +142,5 @@ fn poseidon_opt_plonk_verify(c: &mut Criterion) {
 
 }
 
-criterion_group!(benches, poseidon_opt_plonk_verify);
+criterion_group!(benches, poseidon_opt_plonk_prove);
 criterion_main!(benches);

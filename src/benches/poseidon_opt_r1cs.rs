@@ -1,13 +1,9 @@
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
-use ark_ff::PrimeField;
-use ark_std::{test_rng, UniformRand};
+use ark_std::test_rng;
 use criterion::{criterion_group, criterion_main, Criterion};
 use plonk_protoype::poseidon::constants::PoseidonConstants;
 use plonk_protoype::poseidon::poseidon::{r1cs::R1csSpec, Poseidon};
 use rand::Rng;
-use std::marker::PhantomData;
-use ark_ec::TEModelParameters;
 use ark_relations::r1cs::ConstraintSynthesizer;
 use ark_relations::r1cs::SynthesisError;
 use ark_r1cs_std::fields::fp::FpVar;
@@ -28,7 +24,7 @@ impl ConstraintSynthesizer<Fr> for TestCircuit
     fn generate_constraints(self, mut cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         const WIDTH: usize = 3;
         let mut poseidon =
-            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, self.constants.clone());
+            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, &self.constants);
 
         let inputs_var = self
             .input
@@ -56,7 +52,7 @@ fn poseidon_opt_r1cs_prove(c: &mut Criterion) {
 
     group.bench_function("Height-20 ARITY-2 MT PROVE", |b| {
         let input = (0..20).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
-        let mut circuit = TestCircuit {
+        let circuit = TestCircuit {
             constants: PoseidonConstants::generate::<3>(),
             input,
         };
@@ -65,8 +61,6 @@ fn poseidon_opt_r1cs_prove(c: &mut Criterion) {
         ark_groth16::generate_random_parameters::<Bls12_381, _, _>(circuit.clone(), &mut rng)
             .unwrap();
     
-        let pvk = ark_groth16::prepare_verifying_key(&param.vk);
-
         b.iter(|| {
             ark_groth16::create_random_proof(circuit.clone(), &param, &mut rng).unwrap();
         })
@@ -79,7 +73,7 @@ fn poseidon_opt_r1cs_verify(c: &mut Criterion) {
 
     group.bench_function("Height-20 ARITY-2 MT VERIFY", |b| {
         let input = (0..20).map(|_| rng.gen::<Fr>()).collect::<Vec<_>>();
-        let mut circuit = TestCircuit {
+        let circuit = TestCircuit {
             constants: PoseidonConstants::generate::<3>(),
             input,
         };
