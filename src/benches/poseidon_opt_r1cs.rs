@@ -28,7 +28,7 @@ impl ConstraintSynthesizer<Fr> for TestCircuit
     fn generate_constraints(self, mut cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         const WIDTH: usize = 3;
         let mut poseidon =
-            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, self.constants.clone());
+            Poseidon::<_, R1csSpec<Fr, WIDTH>, WIDTH>::new(&mut cs, &self.constants);
 
         let inputs_var = self
             .input

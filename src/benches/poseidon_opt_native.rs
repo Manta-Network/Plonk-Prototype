@@ -14,7 +14,7 @@ fn poseidon_opt_native(c: &mut Criterion) {
     group.bench_function("Poseidon NATIVE Height-20 ARITY-2 MT", |b| {
         let inputs = (0..20).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         b.iter(|| {
-            let mut poseidon = Poseidon::<(), NativeSpec<Fr, 3>, 3>::new(&mut (), param.clone());
+            let mut poseidon = Poseidon::<(), NativeSpec<Fr, 3>, 3>::new(&mut (), &param);
             let mut curr_hash = Fr::zero();
             for x in inputs.iter() {
                 poseidon.reset(&mut ());

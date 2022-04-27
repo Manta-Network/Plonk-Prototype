@@ -11,6 +11,7 @@ use plonk_core::prelude as plonk;
 use std::fmt::{Debug};
 use std::marker::PhantomData;
 
+/// Trait for unoptimized poseidon hash.
 pub trait PoseidonRefSpec<COM, const WIDTH: usize> {
     /// Field used as state
     type Field: Debug + Clone;
@@ -234,6 +235,8 @@ pub struct NativeSpecRef<F: PrimeField> {
 }
 
 impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<(), WIDTH> for NativeSpecRef<F> {
+    // Field is private variables, ParameterField is public constants.
+    // In Naitve Spec, we do not distinguish these two values.
     type Field = F;
     type ParameterField = F;
 
@@ -327,6 +330,9 @@ mod r1cs {
     impl<F: PrimeField, const WIDTH: usize> PoseidonRefSpec<ConstraintSystemRef<F>, WIDTH>
         for R1csSpecRef<F, WIDTH>
     {
+        // Field is private variables, ParameterField is public constants.
+        // In R1cs Spec, these two types lead to different privacy and #constraints.
+        // See add() and addi() below.
         type Field = FpVar<F>;
         type ParameterField = F;
 

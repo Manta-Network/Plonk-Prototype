@@ -35,7 +35,7 @@ where
     const CIRCUIT_ID: [u8; 32] = [0xff; 32];
 
     fn gadget(&mut self, composer: &mut StandardComposer<F, P>) -> Result<(), Error> {
-        let mut poseidon = Poseidon::<_, PlonkSpec<3>, 3>::new(composer, self.constants.clone());
+        let mut poseidon = Poseidon::<_, PlonkSpec<3>, 3>::new(composer, &self.constants);
 
         let inputs_var = self
             .input
